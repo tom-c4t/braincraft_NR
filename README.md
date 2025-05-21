@@ -1,5 +1,5 @@
 
-<img src="./Braincraft.png" width="100%">
+<img src="./braincraft.png" width="100%">
 
 # Introduction
 
