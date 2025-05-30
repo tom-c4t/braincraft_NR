@@ -136,7 +136,7 @@ These variables can be read (and possibly modified) during training but they won
 
 # Results
 
-Author     |  Date      | File        | Result
+Author     |  Date      | File        | Score
 ---------- | ---------- | ----------- | ---------------
 [@rougier] | 01/06/2025 | [random.py] | **0.62** ± 0.37
 
