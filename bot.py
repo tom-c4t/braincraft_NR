@@ -1,52 +1,43 @@
-# bot.py - Raycast maze simulator
+# Braincraft challenge — 1000 neurons, 100 seconds, 10 runs, 2 choices, no reward
 # Copyright (C) 2025 Nicolas P. Rougier
 # Released under the GNU General Public License 3
 import numpy as np
 from camera import Camera
+from environment import Environment
+from dataclasses import dataclass, field
+from typing import Tuple, Optional, Dict, Any
 
+
+@dataclass
 class Bot:
     """ A circular bot with a camera and an energy gauge"""
+
+    environment: Environment
+    radius: float                  = 0.05
+    position: Tuple[float, float]  = (0.5, 0.5)
+    direction: float               = np.radians(90)
+    speed: float                   = 0.01
+    camera: Camera                 = Camera(fov=60, resolution=64)
+    hit: int                       = 0
+    energy: int                    = 1000
+    energy_min: int                = 0
+    energy_max: int                = 1000
+    energy_move: int               = 1
+    energy_hit: int                = 5
     
-    def __init__(self, maze, colormap, camera = None):
-        """
-        Create a new bot for the given maze and associated colormap
 
-        Parameters
-        ----------
+    def __post_init__(self):
 
-        maze: ndarray
-          2D array describing maze occupancy where value > 0 means
-          occupîed and <=0 means empty.
-
-        colormap: list
-          List of tuple of (int, color) corresponding to wall colors                 
-        """
-        self.radius    = 0.05
-        self.position  = 0.5, 0.5
-        self.direction = np.radians(95)
-        self.speed     = 0.001
-        if camera is not None:
-            self.camera = camera
-        else:
-            self.camera = Camera(fov=60, resolution=64)
-        self.maze       = maze
-        self.colormap   = colormap
-        self.max_energy = 5000
-        self.energy     = self.max_energy
-        self.source     = 1000
+        # Adding noise to initial direction +/- 5°
+        self.direction += np.radians(np.random.uniform(-5, +5))
         
-        self.hit_penalty   = -10
-        self.move_penalty  = -1
-        self.source_leak   = -1
-        self.source_refill = +5
+        # Update sensors and camera
+        self.camera.render(self.position,
+                           self.direction,
+                           self.environment.world,
+                           self.environment.colormap)
 
-
-    def render(self):
-        """ Rendering through camera. """
-        
-        self.camera.render(self.position, self.direction,
-                           self.maze, self.colormap, outline=True)
-        
+    
     def is_legal(self, position):
         """
         Check whether a circular bot with given radius and position
@@ -64,18 +55,18 @@ class Bot:
             True if any part of the robot overlaps a wall, False otherwise.
         """
 
+        world = self.environment.world
         x, y = position
-        h, w = self.maze.shape
-        cell_size = 1/max(self.maze.shape)
+        h, w = world.shape
+        cell_size = 1/max(world.shape)
         radius = 1.05*self.radius
-
         imin = max(0, int((x-radius)/cell_size))
         imax = min(w-1, int((x+radius)/cell_size)) + 1
         jmin = max(0, int((y-radius)/cell_size))
         jmax = min(h-1, int((y+radius)/cell_size)) + 1    
         for j in range(jmin, jmax):
             for i in range(imin, imax):
-                if self.maze[j, i] == 1:
+                if world[j, i] == 1:
                     cmin = np.array([i,j])*cell_size
                     cmax = cmin + cell_size
                     closest = np.maximum(cmin, np.minimum(position, cmax))
@@ -124,7 +115,6 @@ class Bot:
 
         Parameters
         ----------
-
         dtheta : float
          Change in direction in radians, must be between -5° and +5° (in degrees)
 
@@ -137,79 +127,22 @@ class Bot:
         # If there is no energy left, run is ended
         if self.energy <= 0:
             return None
-
+                
         # Try to move in the provided direction
-        self.direction += max(np.radians(-5), min(np.radians(+5), dtheta))
+        self.direction += max(np.radians(-5), min(np.radians(+5), float(dtheta)))
         T = np.array([np.cos(self.direction), np.sin(self.direction)])
         self.position, self.hit = self.move_to(self.position + T*self.speed)
         
-        # Decrease energy source
-        self.source += self.source_leak
-
-        # If the bot is on a source, refill energy
-        x, y = self.position
-        cell_size = 1/max(self.maze.shape)
-        cx,cy = int(x/cell_size), int(y/cell_size)
-        if self.maze[cy,cx] == -1:
-            self.energy += max(0, self.source_refill)
-            self.source -= max(0, self.source_refill)
-
-        # Decrease energy by cost of move and possible hit penalty
-        self.energy += self.move_penalty
-        if self.hit:
-            self.energy += self.hit_penalty
+        # Update bot energy
+        self.environment.update(self)
 
         # This is mostly for debug (first person view) but it also provides
         # an up to date sensor reading (this could be simplified to compute
         # only the sensors values)
-        self.camera.render(self.position, self.direction, self.maze, self.colormap)
+        self.camera.render(self.position,
+                           self.direction,
+                           self.environment.world,
+                           self.environment.colormap)
 
         # Return inputs as (energy, hit, depths, colors)
         return self.energy, self.hit, self.camera.depths, self.camera.values
-
-
-
-# -----------------------------------------------------------------------------
-if __name__ == "__main__":
-    
-    task = {
-        "bot" : {
-            "position" : (0.5,0.5),
-            "direction": 90,
-            "radius"   : 0.05,
-            "speed"    : 0.01,
-            "energy"   : 100,
-            "camera"   : { "fov" :  60,
-                           "resolution" : 64},
-            "penalty"  : { "hit":   -3,
-                           "move" : -1 }
-        },
-        "environment" : {
-            "maze" :  [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                       [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                       [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                       [1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
-                       [1,-1,-1, 1, 0, 0, 1, 0, 0, 1],
-                       [1,-1,-1, 1, 0, 0, 1, 0, 0, 1],
-                       [1, 0, 0, 1, 0, 0, 1, 0, 0, 1],
-                       [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                       [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                       [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]],
-            "colormap" : {
-                -3 : [200, 200, 255], # ground (light blue)
-                -2 : [255, 255, 255], # ground (normal)
-                -1 : [100, 100, 255], # sky
-                 0 : [255, 255, 255], # empty
-                 1 : [200, 200, 200], # wall (light)
-                 2 : [100, 100, 100], # wall (dark)
-                 3 : [255, 255,   0], # wall (yellow)
-                 4 : [  0,   0, 255], # wall (blue)
-                 5 : [255,   0,   0], # wall (red)
-                 6 : [  0, 255,   0] }, # wall (green)
-            "source" : { "index" : (-1,-2),
-                         "energy": 1000,
-                         "leak" : -1,
-                         "refill" : +5 }
-        }
-    }
-        

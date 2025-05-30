@@ -29,10 +29,10 @@ class Camera:
         self.cells = np.zeros((resolution,2), dtype=int)
         self.framebuffer = np.zeros((resolution,resolution,3), dtype=np.ubyte)
 
-    def raycast(self, origin, direction, maze):
+    def raycast(self, origin, direction, world):
         """Compute the end coordinates of a ray that is cast from given
         origin and direction, until it reaches a wall or exit the
-        maze. The physical size of the maze is normalized to fit the unit
+        world. The physical size of the world is normalized to fit the unit
         square originating at (0,0). The method is called Digital
         Differential Analyzer (DDA)
 
@@ -40,13 +40,13 @@ class Camera:
         ----------
 
         origin: tuple
-          Origin of the ray that must be inside the maze
+          Origin of the ray that must be inside the world
 
         direction: float
           Direction of the ray (radians)
 
-        maze: ndarray
-          2D array describing maze occupancy where value > 0 means
+        world: ndarray
+          2D array describing world occupancy where value > 0 means
           occupîed and 0 means empty.
 
         Returns
@@ -55,12 +55,12 @@ class Camera:
         end_position: tuple
 
           End point of the ray in normalized coordinates or None if the
-          ray exits the maze without hitting a wall
+          ray exits the world without hitting a wall
 
         end_cell: tuple
 
           End point of the ray in grid coordinates or None if the ray
-          exits the maze without hitting a wall
+          exits the world without hitting a wall
 
         face : tuple
 
@@ -72,8 +72,8 @@ class Camera:
 
         """
 
-        # Cell size from normalized maze dimension
-        cell_size = 1/max(maze.shape)
+        # Cell size from normalized world dimension
+        cell_size = 1/max(world.shape)
 
         # Grid position
         x, y = origin[0] / cell_size, origin[1] / cell_size
@@ -91,12 +91,12 @@ class Camera:
             # Determine the cell the ray is currently in
             cell_x, cell_y = int(np.floor(x)), int(np.floor(y))
 
-            # Check if the ray exits the maze without hitting a wall
-            if cell_x < 0 or cell_y < 0 or cell_x >= maze.shape[1] or cell_y >=  maze.shape[0]:
+            # Check if the ray exits the world without hitting a wall
+            if cell_x < 0 or cell_y < 0 or cell_x >= world.shape[1] or cell_y >=  world.shape[0]:
                 return None, None, None, steps 
 
             # Check for wall collision
-            if maze[cell_y, cell_x] > 0:
+            if world[cell_y, cell_x] > 0:
                 face = cell_x - cell_x_prev, cell_y - cell_y_prev
                 return np.array([x*cell_size, y*cell_size]), (cell_y, cell_x), face, steps
 
@@ -125,15 +125,40 @@ class Camera:
                 x += dx * t_min
                 y += dy * t_min
 
-    def render(self, position, direction, maze, cmap, outline=True, lighting=True):
 
-        """Update the framebuffer with the current view and records
-        the rays that have been used (for debug)"""
-        
+    def update(self, position, direction, world, colormap):
+        """Update the sensores with the current view"""
+
+        # See https://www.scottsmitelli.com/articles/we-can-fix-your-raycaster/
+        # angles = direction + np.radians(np.linspace(+self.fov/2,-self.fov/2, n, endpoint=True))
+        n = self.resolution
+        D = 0.25 # projection distance
+        W = 2 * D * np.tan(np.radians(self.fov)/2)
+        X = W/2 * np.linspace(+1, -1, n, endpoint=True)
+        angles = direction + np.atan2(X, D)
+        start = position
+                
+        for i, angle in enumerate(angles):
+            end, cell, face, steps = self.raycast(start, angle, world)
+            d = np.sqrt((start[0]-end[0])**2 + (start[1]-end[1])**2)
+            self.rays[i] = start, end
+            self.depths[i] = d
+            self.values[i] = world[cell]
+            self.cells[i] = cell
+
+            
+    def render(self, position, direction, world, colormap, outline=True, lighting=True):
+
+        """Update the sensors with the current view and render to framebuffer."""
+                
         # Clear framebuffer by coloring sky (top half) and ground (bottom half)
         n = self.resolution
-        self.framebuffer[n//2:, :] = cmap[-1] * np.linspace(0.75, 1.00, n//2).reshape(n//2,1,1)
-        self.framebuffer[:n//2, :] = cmap[-2] * np.linspace(1.00, 0.65, n//2).reshape(n//2,1,1)
+
+        sky = colormap[-1]
+        self.framebuffer[n//2:, :] = sky * np.linspace(0.75, 1.00, n//2).reshape(n//2,1,1)
+
+        ground = colormap[-2]
+        self.framebuffer[:n//2, :] = ground * np.linspace(1.00, 0.65, n//2).reshape(n//2,1,1)
         
         cell_prev = None
         face_prev = None
@@ -141,7 +166,6 @@ class Camera:
 
         # Cast each ray and write them in the framebuffer
         # angles = direction + np.radians(np.linspace(+self.fov/2,-self.fov/2, n, endpoint=True))
-
         # See https://www.scottsmitelli.com/articles/we-can-fix-your-raycaster/
         D = 0.25 # projection distance
         W = 2 * D * np.tan(np.radians(self.fov)/2)
@@ -149,12 +173,12 @@ class Camera:
         angles = direction + np.atan2(X, D)
         
         for i, angle in enumerate(angles):
-            end, cell, face, steps = self.raycast(start, angle, maze)
+            end, cell, face, steps = self.raycast(start, angle, world)
             d = np.sqrt((start[0]-end[0])**2 + (start[1]-end[1])**2)
 
             self.rays[i] = start, end
             self.depths[i] = d
-            self.values[i] = maze[cell]
+            self.values[i] = world[cell]
             self.cells[i] = cell
             
             # We should use a fovy instead of hardcoding height
@@ -175,8 +199,7 @@ class Camera:
                     darken = 0.75*darken
                 elif np.all(self.cells[i-1] == self.cells[i]) and face != face_prev:
                     darken = 0.75*darken
-                        
-            self.framebuffer[ymin:ymax,i] = cmap[maze[cell]]*(1 - depth) * darken
+            self.framebuffer[ymin:ymax,i] = np.array(colormap[world[cell]])*(1 - depth) * darken
 
             # Outline (top and bottom)
             if outline:
@@ -197,8 +220,9 @@ if __name__ == "__main__":
     from matplotlib.patches import Circle
     from matplotlib.animation import FuncAnimation
     from matplotlib.collections import LineCollection
+    from environment import Environment
 
-    maze = np.array([
+    world = np.array([
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 0, 4, 4, 0, 0, 3, 3, 0, 1],
@@ -209,21 +233,7 @@ if __name__ == "__main__":
         [1, 0, 6, 6, 0, 0, 5, 5, 0, 1],
         [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])
-
-    cmap = {
-        -3 : np.array([200, 200, 255]), # ground (light blue)
-        -2 : np.array([255, 255, 255]), # ground (normal)
-        -1 : np.array([100, 100, 255]), # sky
-         0 : np.array([255, 255, 255]), # empty
-         1 : np.array([200, 200, 200]), # wall (light)
-         2 : np.array([100, 100, 100]), # wall (dark)
-         3 : np.array([255, 255,   0]), # wall (yellow)
-         4 : np.array([  0,   0, 255]), # wall (blue)
-         5 : np.array([255,   0,   0]), # wall (red)
-         6 : np.array([  0, 255,   0]), # wall (green)
-    }
-    maze_rgb = [cmap[i] for i in maze.ravel()]
-    maze_rgb = np.array(maze_rgb).reshape(maze.shape[0], maze.shape[1], 3)
+    env = Environment(world = world)
     
     radius = 0.05
     position, direction = (0.5, 0.5),  np.radians(0)
@@ -234,9 +244,9 @@ if __name__ == "__main__":
     ax1.set_xlim(0,1), ax1.set_ylim(0,1), ax1.set_axis_off()
     ax2 = plt.axes([1/2,0.0,1/2,1.0], aspect=1, frameon=False)
     ax2.set_xlim(0,1), ax2.set_ylim(0,1), ax2.set_axis_off()
-    ax1.imshow(maze_rgb, interpolation="nearest", origin="lower",
-               extent = [0.0, maze.shape[1]/max(maze.shape),
-                         0.0, maze.shape[0]/max(maze.shape)])
+    ax1.imshow(env.world_rgb, interpolation="nearest", origin="lower",
+               extent = [0.0, env.world.shape[1]/max(env.world.shape),
+                         0.0, env.world.shape[0]/max(env.world.shape)])
     bot = ax1.add_artist(Circle(position, radius, zorder=50, facecolor="white", edgecolor="black"))
     rays = ax1.add_collection(LineCollection([], color="C1", linewidth=0.5, zorder=30))
     hits = ax1.scatter([], [], s=1, linewidth=0, color="black", zorder=40)    
@@ -246,7 +256,8 @@ if __name__ == "__main__":
     def update(frame=0):
         global position, direction
         direction += np.radians(0.5)
-        camera.render(position, direction, maze, cmap, outline=True)
+        camera.update(position, direction, env.world, env.colormap)
+        camera.render(position, direction, env.world, env.colormap)
         rays.set_segments(camera.rays)
         hits.set_offsets(camera.rays[:,1,:])
         framebuffer.set_data(camera.framebuffer)
