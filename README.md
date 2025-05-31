@@ -1,5 +1,5 @@
 
-<img src="./braincraft.png" width="100%">
+<img src="./data/braincraft.png" width="100%">
 
 ### Table of Contents  
 - [Introduction](#introduction) ....................... *Rationale for the challenge*  
@@ -135,7 +135,7 @@ a number of state variables:
 
 These variables can be read (and possibly modified) during training but they won't be accessible during testing (no reading, no writing). To actually move the bot, you need to call the `forward` method. This method will change the direction of the bot, move it forward and update the internal state (camera, hit detection, energy consumption). The evaluation method has also a debug flag that may be helpful to visualize the behavior of your model (see Figure 2).
 
-![](./debug.png)
+![](./data/debug.png)
 
 **Figure 2.** **Debug view during evaluation.** The left part is a bird-eye view of the environment where the yellow part is the unique source of energy. The right part is a first-person view build from the set of 64 sensors that is not needed during evaluation (but it might  help debug).
 
@@ -184,4 +184,4 @@ Here is the current leader board. If you think you can do better, send me a link
 
 
 [@rougier]: https://github.com/rougier
-[random.py]: ./player_random.py
+[random.py]: ./braincraft/player_random.py
