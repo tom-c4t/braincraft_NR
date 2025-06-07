@@ -270,6 +270,9 @@ These variables can be read (and possibly modified) during training but they won
   bunch of generated weigths, then no. If you ask help from a
   generative AI, then ok.
   
+- **When does the challenge ends?** By end of September 2025. Then a
+  new challenge will be proposed.
+  
 
 # Results
 
