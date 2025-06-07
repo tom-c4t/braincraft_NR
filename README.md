@@ -248,10 +248,10 @@ These variables can be read (and possibly modified) during training but they won
   there is really two choices at branching points.
  
 - **Why no reward?** Because it is easy to generate your own reward
-  signal from the derivation of energy. It it?
+  signal from the derivation of energy. Is it?
 
-- **Can I run my code on a supercomputer?** Yes, but the official
-  evaluation will be done on my machine which is a M1 Macbook pro.
+- **Can I run my code on a supercomputer?** Not really because the official
+  evaluation will be ran on my machine (which is a M1 Macbook pro).
 
 - **Can I change the rules?** Of course no.
 
