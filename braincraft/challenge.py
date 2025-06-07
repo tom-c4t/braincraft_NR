@@ -48,7 +48,7 @@ def train(func, timeout=100.0):
 
 
 
-def evaluate(model, runs=10, debug=False):
+def evaluate(model, runs=10, seed=None, debug=False):
     """Evaluate a model with the given number of runs.
 
     Parameters
@@ -63,7 +63,10 @@ def evaluate(model, runs=10, debug=False):
     =======
     Mean score (float) and stndard deviation over the given number of runs.
     """
-       
+
+    if seed is None:
+        seed = np.random.randint(10_000_000)
+    
     if debug:
         import matplotlib.pyplot as plt
         from matplotlib.patches import Circle
@@ -103,8 +106,8 @@ def evaluate(model, runs=10, debug=False):
 
     scores = []
     for i in range(runs):
-
-        np.random.seed(i)   
+        np.random.seed(seed+i)
+        # print(f"Seed : {seed+i}")
 
         environment = Environment()
 

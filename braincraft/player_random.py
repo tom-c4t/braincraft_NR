@@ -50,15 +50,16 @@ def random_player():
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     import time
+    seed = 12345
     
     # Training (100 seconds)
-    np.random.seed(1)
+    np.random.seed(seed)
     print(f"Starting training for 100 seconds (user time)")
     model = train(random_player, timeout=100)
 
     # Evaluation
     start_time = time.time()
-    score, std = evaluate(model, debug=False)
+    score, std = evaluate(model, debug=False, seed=seed)
     elapsed = time.time() - start_time
     print(f"Evaluation completed after {elapsed:.2f} seconds")
     print(f"Final score: {score:.2f} ± {std:.2f}")
