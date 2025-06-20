@@ -149,16 +149,17 @@ a number of state variables:
  - `camera` (constant, fov = 60, resolution = 64)
     - `camera.depths` (wall distances, n=resolution=64)
     - `camera.values` (walls color, n=resolution=64)
- - `position` (initially 0.5, 0.5)
- - `direction` (inititally 90° ± 5°)
+ - `position` (initially 0.5, 0.5, task dependent)
+ - `direction` (inititally 90° ± 5°, task dependent)
  - `energy` (initially 1000)
- - `source` (initially 1000)
+ - `move_penalty` (constant, 1)
+ - `hit_penalty` (constant, 5)
 
 as well as the Environment (task dependent) class that also gives access to energy sources:
 
  - `energy` (initially 2000)
- - `probability` (constant)
- - `quality` (constant)
+ - `probability` (constant, 1.0, task & source dependent)
+ - `quality` (constant, 1.0, task & source dependent)
  - `leak` (constant, 2)
  - `refill` (constant, 5)
 
