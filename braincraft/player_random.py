@@ -4,11 +4,9 @@
 """
 Example and evaluation of the performances of a random player.
 """
-import numpy as np
 from bot import Bot
-from environment import Environment
-from challenge import train, evaluate
-
+from environment_1 import Environment
+    
 def identity(x):
     return x
 
@@ -16,7 +14,7 @@ def random_player():
     """Random players building"""
 
     np.random.seed(1)
-    bot = Bot(environment=Environment())
+    bot = Bot()
 
     # Fixed parameters
     n = 1000
@@ -37,7 +35,7 @@ def random_player():
         model = Win, W, Wout, warmup, leak, f, g
 
         # Evaluate model on 3 runs
-        score_mean, score_std = evaluate(model, runs = 3, debug=False)
+        score_mean, score_std = evaluate(model, Bot, Environment, runs = 3, debug=False)
         
         if score_mean > score_best:
             score_best = score_mean
@@ -50,6 +48,9 @@ def random_player():
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     import time
+    import numpy as np    
+    from challenge import train, evaluate
+
     seed = 12345
     
     # Training (100 seconds)
@@ -59,7 +60,7 @@ if __name__ == "__main__":
 
     # Evaluation
     start_time = time.time()
-    score, std = evaluate(model, debug=False, seed=seed)
+    score, std = evaluate(model, Bot, Environment, debug=False, seed=seed)
     elapsed = time.time() - start_time
     print(f"Evaluation completed after {elapsed:.2f} seconds")
     print(f"Final score: {score:.2f} ± {std:.2f}")

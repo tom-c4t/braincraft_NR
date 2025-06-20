@@ -6,11 +6,7 @@ Evaluation of the performance of a manual (human) player.
 """
 import sys
 import numpy as np
-from bot import Bot
-from environment import Environment
-
-
-    
+   
 def on_press(event):
     """ Change bot direction with lefT/right arrows """
     global move
@@ -25,19 +21,19 @@ def on_press(event):
 def update(frame=0):
     """ Update display, bot and stats. """
         
-    global anim, bot, graphics, move, distance
-
-    p = bot.position
-    bot.forward(0)
+    global anim, bot, graphics, move, distance, environment
+    
+    position = bot.position
+    energy = bot.energy
+    bot.forward(0, environment)
     move = True
-    distance += np.linalg.norm(p - bot.position)
-
+    distance += np.linalg.norm(position - bot.position)
     bot.camera.render(bot.position, bot.direction,
                       environment.world, environment.colormap)
-    energy = bot.energy
     graphics["rays"].set_segments(bot.camera.rays)
     graphics["hits"].set_offsets(bot.camera.rays[:,1,:])
     graphics["bot"].set_center(bot.position)
+
     if energy < bot.energy:
         graphics["energy"].set_color( ("black", "white", "C2") )
     else:
@@ -57,6 +53,8 @@ def update(frame=0):
 
     
 if __name__ == "__main__":
+    from bot import Bot
+    from environment_1 import Environment
 
     import matplotlib.pyplot as plt
     from matplotlib.patches import Circle
@@ -64,8 +62,7 @@ if __name__ == "__main__":
     from matplotlib.collections import LineCollection
 
     environment = Environment()
-    bot = Bot(environment=environment)
-            
+    bot         = Bot()
     world = environment.world
     world_rgb = environment.world_rgb
 
@@ -94,10 +91,12 @@ if __name__ == "__main__":
 
     print("The manual player is controlled by left and right arrows")
     print("Since the human player (e.g. you) has a bird eye view, this serves as an ideal reference")
-    fig.canvas.mpl_connect('key_press_event', on_press)
-    anim = FuncAnimation(fig, update, frames=360, interval=60, repeat=True)
+
     move = True
     distance = 0.0
+
+    fig.canvas.mpl_connect('key_press_event', on_press)
+    anim = FuncAnimation(fig, update, frames=360, interval=60, repeat=True)
     plt.show()
     print(f"Final score: {distance:.2f} (single run)")
     sys.stdout.flush()

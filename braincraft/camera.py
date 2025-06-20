@@ -18,7 +18,7 @@ import numpy as np
 class Camera:
     """ A camera based on raycasting """
     
-    def __init__(self, fov = 60, resolution = 128):
+    def __init__(self, fov = 60, resolution = 64):
         """Build a new camera with a fov (field of view) and a given resolution"""
         
         self.fov = fov
@@ -127,7 +127,7 @@ class Camera:
 
 
     def update(self, position, direction, world, colormap):
-        """Update the sensores with the current view"""
+        """Update the sensors with the current view"""
 
         # See https://www.scottsmitelli.com/articles/we-can-fix-your-raycaster/
         # angles = direction + np.radians(np.linspace(+self.fov/2,-self.fov/2, n, endpoint=True))
@@ -148,7 +148,6 @@ class Camera:
 
             
     def render(self, position, direction, world, colormap, outline=True, lighting=True):
-
         """Update the sensors with the current view and render to framebuffer."""
                 
         # Clear framebuffer by coloring sky (top half) and ground (bottom half)
@@ -210,7 +209,6 @@ class Camera:
 
             face_prev = face
 
-            
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     "Usage example"

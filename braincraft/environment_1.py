@@ -16,7 +16,7 @@ class Source:
     """
 
     identity: int                   # Identity of the source (mandatory & negative)
-    energy: int        = 1000       # Initial energy level
+    energy: int        = 2000       # Initial energy level
     probability: float = 1.0        # Probability of refill
     quality: int       = 1          # Quality of the source (1, 2, or 3)
     leak: int          = 2          # Source leak per iteration
@@ -73,9 +73,6 @@ class Environment:
          6 : [  0, 255,   0], # wall (green)
     }
 
-    # Active source
-    source: Source = field(init=False)
-
 
     def update(self, bot):
         """Update the environment, refill bot if on a source and
@@ -88,6 +85,7 @@ class Environment:
         x, y = bot.position
         cell_size = 1/max(self.world.shape)
         cx,cy = int(x/cell_size), int(y/cell_size)
+
         if self.world[cy,cx] == self.source.identity:
             bot.energy += self.source.get_refill()
 

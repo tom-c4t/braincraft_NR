@@ -4,10 +4,10 @@
 import time
 import numpy as np
 from tqdm import tqdm
-from bot import Bot
 from camera import Camera
-from environment import Environment
 
+# from bot import Bot
+# from environment import Environment
 
 def train(func, timeout=100.0):
     """
@@ -48,7 +48,7 @@ def train(func, timeout=100.0):
 
 
 
-def evaluate(model, runs=10, seed=None, debug=False):
+def evaluate(model, Bot, Environment, runs=10, seed=None, debug=False):
     """Evaluate a model with the given number of runs.
 
     Parameters
@@ -56,6 +56,15 @@ def evaluate(model, runs=10, seed=None, debug=False):
     model : list    
       model should be a W_in, W, W_out, warmup, leak, f, g list
 
+    Environment: class
+      Environment class to use for evaluation
+    
+    Bot: class
+      Bot class to use for evaluation
+    
+    runs : int
+      Number of runs to evaluate
+     
     debug : boolean
       Whether to display animation (slow)
     
@@ -105,16 +114,17 @@ def evaluate(model, runs=10, seed=None, debug=False):
     W_in, W, W_out, warmup, leak, f, g = model
 
     scores = []
-    for i in range(runs):
-        np.random.seed(seed+i)
-        # print(f"Seed : {seed+i}")
+    seeds = np.random.randint(0, 1_000_000, runs)
+    # print(f"Seeds : {seeds}")
 
+    for i in range(runs):
+        np.random.seed(seeds[i])
         environment = Environment()
 
         if debug:
             graphics["topview"].set_data(environment.world_rgb)
         
-        bot = Bot(environment=environment)
+        bot = Bot()
         
         n = bot.camera.resolution
         I, X = np.zeros((n+3,1)), np.zeros((1000,1))
@@ -123,7 +133,7 @@ def evaluate(model, runs=10, seed=None, debug=False):
         hits = 0
         iteration = 0
 
-        # Update sensors
+        # Initial update
         if debug:
             bot.camera.render(bot.position, bot.direction,
                               environment.world, environment.colormap)
@@ -144,7 +154,7 @@ def evaluate(model, runs=10, seed=None, debug=False):
             # During warmup, bot does not move
             if iteration > warmup:
                 p = bot.position
-                bot.forward(O)
+                bot.forward(O, environment, debug)
                 distance += np.linalg.norm(p - bot.position)
                 hits += bot.hit
             iteration += 1
