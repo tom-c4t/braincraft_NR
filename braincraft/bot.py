@@ -116,7 +116,7 @@ class Bot:
         Parameters
         ----------
         dtheta : float
-          Change in direction in radians, must be between -5° and +5° (in degrees)
+          Change in direction in degrees, must be between -5° and +5°
 
         environment: Environment
             Environment to consider for the move

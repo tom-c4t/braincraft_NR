@@ -86,7 +86,7 @@ where:
 
    - X(t) ∈ ℝⁿ is the state vector
    - I(t) ∈ ℝᴾ is the input vector
-   - O(t) ∈ ℝ  is the output
+   - O(t) ∈ ℝ  is the output (in degrees)
    - W ∈ ℝⁿˣⁿ  is the recurrent (or inner) weight matrix
    - Win ∈ ℝᴾˣⁿ is the input weight matrix
    - Wout ∈ ℝⁿˣ¹ is the output weight matrix
