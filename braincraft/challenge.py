@@ -150,8 +150,8 @@ def evaluate(model, Bot, Environment, runs=10, seed=None, debug=False):
             I[:n,0] = 1 - bot.camera.depths
             
             I[n:,0] = bot.hit, bot.energy, 1.0
-            X = (1-leak)*X + leak*np.tanh(np.dot(W_in, I) + np.dot(W, X))
-            O = np.dot(W_out, X)
+            X = (1-leak)*X + leak*f(np.dot(W_in, I) + np.dot(W, X))
+            O = np.dot(W_out, g(X))
             
             # During warmup, bot does not move
             if iteration > warmup:
