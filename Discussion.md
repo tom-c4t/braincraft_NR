@@ -18,5 +18,9 @@
    a) bei = -5: Fortbewegung ohne Kollision , bei < -5: Wall hit, > -5: Source überschritten
 4. Was leiten wir daraus für die Anpassung der Matrizen ab?
 
+# ESN Infos
+- https://hamkerlab.github.io/neurorobotik-reservoir/
+
 # To Dos
 - bis Mittwoch (**09.07.2025**) Echo State Networks recherchieren
+
