@@ -27,10 +27,27 @@ Nutze Architektur des ESN
 4. Mache Backpropagation
 
 Problem:  
+- keine Position während der Evaluation
+- müssen Sensordaten verwenden
+- wie viele Daten bekommen wir
+
+## 3. Ansatz
+- Hierarchie-Lernen
+- 2 Ebenen --> obere Ebene: Maximierung der zurückgelegten Distanz, untere Ebene: Maximierung des Energy Levels
+- unteres Level: mit den gegebenen Sensorinputs, wie sollte ich agieren, um mein Energielevel möglichst hoch zu halten
+- oberes Level: Trajektorienplanung
+
+Problem:
+- Zeit (nur mit Hindsight anwenden)
+- Implementierung in Numpy und SciPy
+
+# Hinweise Valentin
+- Evaluierung durchführen (muss nicht komplette evaluate-Funktion sein, aber Teile davon)
+- Wie viele Neuronen? Wie viele Layers?
 
 # ESN Infos
 - https://hamkerlab.github.io/neurorobotik-reservoir/
 
 # To Dos
-- bis Mittwoch (**09.07.2025**) Echo State Networks recherchieren
+- Recherchiere Hierarchie-Lernen
 
