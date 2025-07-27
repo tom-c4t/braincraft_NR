@@ -41,6 +41,11 @@ Problem:
 - Zeit (nur mit Hindsight anwenden)
 - Implementierung in Numpy und SciPy
 
+## 4. Ansatz
+- haben kontinuierlichen State Space und kontinuierlichen Action Space --> nutze deswegen Deep Deterministic Policy Gradient (DDPG)
+- DDPG ist eine Actor-Critic-Architektur
+- es existiert bereits eine Implementierung von DDPg nur mit numpy: https://github.com/kcg2015/DDPG_numpy_only --> für unsere Anwendung anpassen
+
 # Hinweise Valentin
 - Evaluierung durchführen (muss nicht komplette evaluate-Funktion sein, aber Teile davon)
 - Wie viele Neuronen? Wie viele Layers?
