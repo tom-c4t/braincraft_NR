@@ -33,6 +33,7 @@ def update(frame=0):
     graphics["rays"].set_segments(bot.camera.rays)
     graphics["hits"].set_offsets(bot.camera.rays[:,1,:])
     graphics["bot"].set_center(bot.position)
+    print(f"Distances: {bot.camera.depths}")
 
     if energy < bot.energy:
         graphics["energy"].set_color( ("black", "white", "C2") )
@@ -48,6 +49,7 @@ def update(frame=0):
         graphics["energy"].set_segments([[(0.1, 0.1),(0.9, 0.1)],
                                          [(0.1, 0.1),(0.9, 0.1)]])            
         anim.event_source.stop()
+
 
     graphics["camera"].set_data(bot.camera.framebuffer)
 
