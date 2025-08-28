@@ -218,7 +218,7 @@ if __name__ == "__main__":
     from matplotlib.patches import Circle
     from matplotlib.animation import FuncAnimation
     from matplotlib.collections import LineCollection
-    from environment import Environment
+    from environment_1 import Environment
 
     world = np.array([
         [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],

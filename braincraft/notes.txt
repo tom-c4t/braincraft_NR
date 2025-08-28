@@ -1,0 +1,7 @@
+Ich habe in der Datei ddpg_training.py eine DDPG Actor-Critic Architektur mit Keras/Tensorflow implementiert. 
+Die Implementierung beruht größtenteils auf dem Keras-Beispiel zum invertierten Pendel (https://keras.io/examples/rl/ddpg_pendulum/).
+ 
+Die Funktion "training_function" müssten wir dann an challenge.py übergeben, damit diese im Loop aufgerufen wird.
+
+Ich bin noch nicht ganz happy mit der aktuellen Version. Vor allem Zeile 63 macht Probleme, da dort irgendwie die Input-Layer immer um eine Dimension erweitert wird, die ich gar nicht haben will.
+Das führt dazu, dass ich an vielen anderen Stellen, die Dimension der Tensoren auch erweitern musste.
