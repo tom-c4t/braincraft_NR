@@ -14,10 +14,11 @@ from bot import Bot
 from environment_1 import Environment
 
 # Specify dimensions of observation and action space
-num_states = 64 # 64 depth values from camera
+num_states = 67 # 64 depth values from camera + hit sensor + energy level + bias (=1.0)
 num_actions = 1 # one angle between -5 and 5 degrees
 upper_bound = 5 # upper bound for action
 lower_bound = -5 # lower bound for action
+batch_size = None # batch size
 
 # Define a customized Keras layer for equation 1
 class LeakyRNNCell(keras.layers.Layer):
@@ -45,7 +46,7 @@ class LeakyRNNCell(keras.layers.Layer):
 
     def call(self, inputs, states):
         prev_state = states[0]
-        # f(Wx + Win u + b)
+        # f(W * X + Win * I)
         preact = tf.matmul(prev_state, self.W) + tf.matmul(inputs, self.Win)
         candidate = self.activation(preact)
 
@@ -60,16 +61,16 @@ def get_actor():
     last_init = keras.initializers.RandomUniform(minval=-0.003, maxval=0.003)
 
     # input equation (equation 1)
-    inputs = keras.Input((None, num_states)) # I(t)
-    print(f"Inputs: {inputs}")
-    cell = LeakyRNNCell(units = 256, leak=0.3)
+    inputs = keras.Input((batch_size, num_states))
+    print(f"Input: {inputs}")
+    cell = LeakyRNNCell(units = 1000, leak=0.3)
     rnn_layer = RNN(cell, return_sequences=True)
     rnn_output = rnn_layer(inputs)
+
     # Output equation (equation 2)
     outputs = keras.layers.Dense(1, activation="tanh", use_bias=False, kernel_initializer=last_init)(rnn_output)
     # Our upper bound is 5.0 (maximum turning angle)
     outputs = outputs * upper_bound
-    print(f"Outputs: {outputs}")
     model = keras.Model(inputs, outputs)
     return model
 
@@ -77,8 +78,8 @@ def get_actor():
 # Defining the Critic network
 def get_critic():
     # State as input
-    state_input = keras.Input((None, num_states))
-    state_out = keras.layers.Dense(16, activation="relu")(state_input)
+    state_inputs = keras.Input((batch_size, num_states))
+    state_out = keras.layers.Dense(16, activation="relu")(state_inputs)
     state_out = keras.layers.Dense(32, activation="relu")(state_out)
 
     # Action as input
@@ -93,7 +94,7 @@ def get_critic():
     outputs = keras.layers.Dense(1)(out)
 
     # Outputs single value for give state-action
-    model = keras.Model([state_input, action_input], outputs)
+    model = keras.Model([state_inputs, action_input], outputs)
 
     return model
 
@@ -126,11 +127,13 @@ tau = 0.005
 # Return an action
 def policy(state):
     sampled_actions = keras.ops.squeeze(actor_model(state), axis=-1)
+    print(f"State: {state}")
+    print(f"Sampled actions: {sampled_actions}")
     sampled_actions = sampled_actions.numpy()
 
     # We make sure action is within bounds
     legal_action = np.clip(sampled_actions, lower_bound, upper_bound)
-
+    print (f"Selected action: {legal_action}")
     return [np.squeeze(legal_action)]
 
 
@@ -181,13 +184,14 @@ class Buffer:
         with tf.GradientTape() as tape:
             print(f"Next state batch: {next_state_batch}")
             next_state_batch = keras.ops.expand_dims(next_state_batch,0)
+            next_state_batch = keras.ops.expand_dims(next_state_batch,0)
             target_actions = target_actor(next_state_batch, training=True)
-            y = reward_batch + gamma * target_critic(
-                [next_state_batch, target_actions], training=True
-            )
+            y = reward_batch + gamma * target_critic([next_state_batch, target_actions], training=True)
             print(f"State batch: {state_batch}")
             print(f"Action batch: {action_batch}")
             state_batch = keras.ops.expand_dims(state_batch,0)
+            state_batch = keras.ops.expand_dims(state_batch,0)
+            action_batch = keras.ops.expand_dims(action_batch,0)
             action_batch = keras.ops.expand_dims(action_batch,0)
             critic_value = critic_model([state_batch, action_batch], training=True)
             critic_loss = keras.ops.mean(keras.ops.square(y - critic_value))
@@ -221,9 +225,7 @@ class Buffer:
         action_batch = keras.ops.convert_to_tensor(self.action_buffer[batch_indices])
         reward_batch = keras.ops.convert_to_tensor(self.reward_buffer[batch_indices])
         reward_batch = keras.ops.cast(reward_batch, dtype="float32")
-        next_state_batch = keras.ops.convert_to_tensor(
-            self.next_state_buffer[batch_indices]
-        )
+        next_state_batch = keras.ops.convert_to_tensor(self.next_state_buffer[batch_indices])
 
         self.update(state_batch, action_batch, reward_batch, next_state_batch)
 
@@ -242,44 +244,65 @@ def update_target(target, original, tau):
 # Return weigths
 def training_function():
     # Instantiate every class that is necessary
-    buffer = Buffer(1000, 64)
+    num_episodes = 10000
+    buffer = Buffer(num_episodes, batch_size)
     bot = Bot()
     environment = Environment()
 
-    # Initialization
-    prev_state = bot.camera.depths
-    prev_energy = bot.energy
-    tf_prev_state = keras.ops.expand_dims(keras.ops.convert_to_tensor(prev_state),0)
-    tf_prev_state = keras.ops.expand_dims(tf_prev_state,0)
+    while bot.energy > 0:
+        # Initialization
+        prev_state = np.zeros((num_states))
+        state = np.zeros((num_states))
+        prev_state[:64] = bot.camera.depths
+        prev_state[64:] = bot.hit, bot.energy, 1.0
+        print(f"Prev state: {prev_state}")
+        prev_energy = bot.energy
+        tf_prev_state = keras.ops.expand_dims(keras.ops.convert_to_tensor(prev_state),0)
+        tf_prev_state = keras.ops.expand_dims(tf_prev_state,0)
 
-    # Choose action and interact
-    action = policy(tf_prev_state)
-    action = action[0]
-    energy,_,state,_ = bot.forward(dtheta=action, environment=environment)
-    reward = energy - prev_energy 
-    print(f"Reward: {reward}")
-    print(f"State: {state}")
+        # Choose action and interact
+        action = policy(tf_prev_state)
+        action = action[0]
+        energy, hit, depth, values = bot.forward(dtheta=action, environment=environment)
+        reward = energy - prev_energy
+        state[:64] = depth
+        state[64:] = hit, energy, 1.0
+        print(f"Reward: {reward}")
+        print(f"State: {state}")
 
-    # Update Experience Replay Buffer
-    buffer.record((prev_state, action, reward, state))
-    buffer.learn()
+        # Update Experience Replay Buffer
+        buffer.record((prev_state, action, reward, state))
+        buffer.learn()
 
-    # Update Actor and Critic network
-    update_target(target_actor, actor_model, tau)
-    update_target(target_critic, critic_model, tau)
+        # Update Actor and Critic network
+        update_target(target_actor, actor_model, tau)
+        update_target(target_critic, critic_model, tau)
 
-    # Return the weights
-    Wout = actor_model.get_layer("dense").get_weights()[0]
-    Win = actor_model.get_layer("rnn").get_weights()[0]
-    W = actor_model.get_layer("rnn").get_weights()[1]
+        # Return the weights
+        Wout = actor_model.get_layer("dense").get_weights()[0]
+        Win = actor_model.get_layer("rnn").get_weights()[0]
+        W = actor_model.get_layer("rnn").get_weights()[1]
 
-    warmup = 0
-    leak = actor_model.get_layer("rnn").cell.leak
-    f = actor_model.get_layer("rnn").cell.activation
-    g = actor_model.get_layer("dense").activation
-    model = Win, W, Wout, warmup, leak, f, g
-    yield model
+        warmup = 0
+        leak = actor_model.get_layer("rnn").cell.leak
+        f = actor_model.get_layer("rnn").cell.activation
+        g = actor_model.get_layer("dense").activation
+        model = Win.T, W.T, Wout.T, warmup, leak, f, g
+        yield model
 
 #----------------------------------------------------------------------
 if __name__ == "__main__":
-    training_function()
+    import time
+    import numpy as np    
+    from challenge import train, evaluate
+    
+    # Training (100 seconds)
+    print(f"Starting training for 100 seconds (user time)")
+    model = train(training_function, timeout=100)
+
+    # Evaluation
+    start_time = time.time()
+    score, std = evaluate(model, Bot, Environment, debug=False, seed=None)
+    elapsed = time.time() - start_time
+    print(f"Evaluation completed after {elapsed:.2f} seconds")
+    print(f"Final score: {score:.2f} ± {std:.2f}")

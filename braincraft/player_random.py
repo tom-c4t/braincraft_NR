@@ -28,7 +28,7 @@ def random_player():
     model_best = None
     score_best = -1    
 
-    for i in range(5):
+    for i in range(100):
         Win  = np.random.uniform(-1,1, (n,p+3))
         W = np.random.uniform(-1,1, (n,n))*(np.random.uniform(0,1, (n,n)) < 0.1)
         Wout = 0.1*np.random.uniform(-1, 1, (1,n))
