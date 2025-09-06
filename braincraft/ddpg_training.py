@@ -19,6 +19,8 @@ num_actions = 1 # one angle between -5 and 5 degrees
 upper_bound = 5 # upper bound for action
 lower_bound = -5 # lower bound for action
 batch_size = 64 # batch size
+leak = 0.7 # leak rate for the actor
+seq_len = 4 # sequence length for RNN
 
 # noise class
 class OUActionNoise:
@@ -90,10 +92,10 @@ def get_actor():
     last_init = keras.initializers.RandomUniform(minval=-0.003, maxval=0.003)
 
     # input equation (equation 1)
-    inputs = keras.Input(shape=(None, num_states))
+    inputs = keras.Input(shape=(seq_len, num_states))
     # print(f"Input: {inputs}")
-    cell = LeakyRNNCell(units = 1000, leak=0.3)
-    rnn_layer = RNN(cell, return_sequences=False)
+    cell = LeakyRNNCell(units = 1000, leak=leak)
+    rnn_layer = RNN(cell, return_sequences=True)
     rnn_output = rnn_layer(inputs)
 
     # Output equation (equation 2)
@@ -111,15 +113,17 @@ def get_actor():
 def get_critic():
     # input equation (equation 1)
     critic_inputs = keras.Input(shape=(None, num_states))
-    critic_cell = LeakyRNNCell(units = 1000, leak=0.3)
-    critic_rnn_layer = RNN(critic_cell, return_sequences=False)
+    critic_cell = LeakyRNNCell(units = 1000, leak=leak)
+    critic_rnn_layer = RNN(critic_cell, return_sequences=True)
     critic_rnn_output = critic_rnn_layer(critic_inputs)
+    print(f"Critic RNN output shape: {critic_rnn_output.shape}")
 
     critic_actions = keras.Input(shape=(None, num_actions))
     critic_action_out = keras.layers.Dense(1000, use_bias=False, activation="relu")(critic_actions)
+    print(f"Critic action out shape: {critic_action_out.shape}")
 
     # Combine state and action pathways
-    critic_rnn_output = keras.ops.expand_dims(critic_rnn_output,1)
+    #critic_rnn_output = keras.ops.expand_dims(critic_rnn_output,1)
     concat = keras.layers.Concatenate()([critic_rnn_output, critic_action_out])
     out = keras.layers.Dense(1000, activation="relu")(concat)
     critic_outputs = keras.layers.Dense(1)(out)
@@ -158,6 +162,7 @@ tau = 0.005
 
 # Return an action
 def policy(state, noise_object):
+    print(f"Actor model Gedöns: {actor_model(state)}")
     sampled_actions = keras.ops.squeeze(actor_model(state), axis=-1)
     # print(f"Sampled without noise: {sampled_actions}")
     noise = noise_object()
@@ -193,7 +198,7 @@ class Buffer:
         # replacing old records
         index = self.buffer_counter % self.buffer_capacity
 
-        self.state_buffer[index] = obs_tuple[0]
+        self.state_buffer[index] = obs_tuple[0][0]
         self.action_buffer[index] = obs_tuple[1]
         self.reward_buffer[index] = obs_tuple[2]
         self.next_state_buffer[index] = obs_tuple[3]
@@ -214,19 +219,13 @@ class Buffer:
         # Training and updating Actor & Critic networks.
         # See Pseudo Code.
         with tf.GradientTape() as tape:
-            #print(f"Next state batch pre:{next_state_batch.shape}")
-            next_state_batch = keras.ops.expand_dims(next_state_batch,1)
-            # print(f"Next state batch post:{next_state_batch.shape}")
             target_actions = target_actor(next_state_batch, training=True)
             # print(f"Target actions: {target_actions}")
             y = reward_batch + gamma * target_critic([next_state_batch, target_actions], training=True)
-            state_batch = keras.ops.expand_dims(state_batch,1)
-            action_batch = keras.ops.expand_dims(action_batch,1)
             critic_value = critic_model([state_batch, action_batch], training=True)
             critic_loss = keras.ops.mean(keras.ops.square(y - critic_value))
 
         critic_grad = tape.gradient(critic_loss, critic_model.trainable_variables)
-        # print(f"Critic grad: {critic_grad}")
         critic_optimizer.apply_gradients(
             zip(critic_grad, critic_model.trainable_variables)
         )
@@ -237,26 +236,31 @@ class Buffer:
             # Used `-value` as we want to maximize the value given
             # by the critic for our actions
             actor_loss = -keras.ops.mean(critic_value)
-
         actor_grad = tape.gradient(actor_loss, actor_model.trainable_variables)
-        # print(f"Actor grad: {actor_grad}")
+        for i, grad in enumerate(actor_grad):
+            print(f"Actor grad {i}: {None if grad is None else tf.reduce_sum(tf.abs(grad)).numpy()}")
         actor_optimizer.apply_gradients(
             zip(actor_grad, actor_model.trainable_variables)
         )
 
     # We compute the loss and update parameters
     def learn(self):
-        # Get sampling range
-        record_range = min(self.buffer_counter, self.buffer_capacity)
-        # Randomly sample indices
-        batch_indices = np.random.choice(record_range, self.batch_size)
+        record_range = min(max(5, self.buffer_counter), self.buffer_capacity)
+        batch_indices = np.random.choice(record_range - seq_len, self.batch_size)
+
+        # Collect sequences for each sampled index
+        state_batch = np.array([self.state_buffer[idx:idx+seq_len] for idx in batch_indices])
+        action_batch = np.array([self.action_buffer[idx:idx+seq_len] for idx in batch_indices])
+        reward_batch = np.array([self.reward_buffer[idx:idx+seq_len] for idx in batch_indices])
+        next_state_batch = np.array([self.next_state_buffer[idx:idx+seq_len] for idx in batch_indices])
 
         # Convert to tensors
-        state_batch = keras.ops.convert_to_tensor(self.state_buffer[batch_indices])
-        action_batch = keras.ops.convert_to_tensor(self.action_buffer[batch_indices])
-        reward_batch = keras.ops.convert_to_tensor(self.reward_buffer[batch_indices])
+        state_batch = keras.ops.convert_to_tensor(state_batch)
+        action_batch = keras.ops.convert_to_tensor(action_batch)
+        reward_batch = keras.ops.convert_to_tensor(reward_batch)
+        print(f"reward batch shape: {reward_batch.shape}, dtype: {reward_batch.dtype}")
         reward_batch = keras.ops.cast(reward_batch, dtype="float32")
-        next_state_batch = keras.ops.convert_to_tensor(self.next_state_buffer[batch_indices])
+        next_state_batch = keras.ops.convert_to_tensor(next_state_batch)
 
         self.update(state_batch, action_batch, reward_batch, next_state_batch)
 
@@ -279,23 +283,30 @@ def training_function():
     buffer = Buffer(num_episodes, batch_size)
     bot = Bot()
     environment = Environment()
+    counter = 0
 
     while bot.energy > 0:
         # Initialization
-        prev_state = np.zeros((num_states))
+        prev_state = np.zeros((seq_len, num_states))
         state = np.zeros((num_states))
-        prev_state[:64] = bot.camera.depths
-        prev_state[64:] = bot.hit, bot.energy, 1.0
+        index = counter % seq_len
+        counter += 1
+        prev_state[index, :64] = bot.camera.depths
+        prev_state[index, 64:] = bot.hit, bot.energy, 1.0
         #print(f"Prev state: {prev_state}")
         prev_energy = bot.energy
         tf_prev_state = keras.ops.expand_dims(keras.ops.convert_to_tensor(prev_state),0)
-        tf_prev_state = keras.ops.expand_dims(tf_prev_state,1)
+        #tf_prev_state = keras.ops.expand_dims(tf_prev_state,1)
 
         # Choose action and interact
         action = policy(tf_prev_state, ou_noise)
-        action = action[0]
+        print(f"Raw action: {action}")
+        action = action[0][0]
+        print(f"Action: {action}")
         energy, hit, depth, values = bot.forward(dtheta=action, environment=environment)
         reward = energy - prev_energy
+        if reward == -6:
+            reward = -10
         state[:64] = depth
         state[64:] = hit, energy, 1.0
         print(f"Reward: {reward}")
@@ -311,8 +322,11 @@ def training_function():
 
         # Return the weights
         Wout = actor_model.get_layer("dense_2").get_weights()[0]
+        #print(f"Wout: {Wout}")
         Win = actor_model.get_layer("rnn").get_weights()[0]
+        #print(f"Win: {Win}")
         W = actor_model.get_layer("rnn").get_weights()[1]
+        #print(f"W: {W}")
 
         warmup = 0
         leak = actor_model.get_layer("rnn").cell.leak
@@ -333,7 +347,7 @@ if __name__ == "__main__":
 
     #print(f"Win {model[0]}\n")
     #print(f"W {model[1]}\n")
-    print(f"Wout {model[2].shape}\n")
+    #print(f"Wout {model[2].shape}\n")
     #print(f"warmup {model[3]}\n")
     #print(f"leak {model[4]}\n")
     #print(f"f {model[5]}\n")
