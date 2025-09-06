@@ -18,7 +18,7 @@ num_states = 67 # 64 depth values from camera + hit sensor + energy level + bias
 num_actions = 1 # one angle between -5 and 5 degrees
 upper_bound = 5 # upper bound for action
 lower_bound = -5 # lower bound for action
-batch_size = None # batch size
+batch_size = 64 # batch size
 
 # Define a customized Keras layer for equation 1
 class LeakyRNNCell(keras.layers.Layer):
@@ -61,7 +61,7 @@ def get_actor():
     last_init = keras.initializers.RandomUniform(minval=-0.003, maxval=0.003)
 
     # input equation (equation 1)
-    inputs = keras.Input((batch_size, num_states))
+    inputs = keras.Input(shape=(None, num_states))
     print(f"Input: {inputs}")
     cell = LeakyRNNCell(units = 1000, leak=0.3)
     rnn_layer = RNN(cell, return_sequences=True)
@@ -127,13 +127,10 @@ tau = 0.005
 # Return an action
 def policy(state):
     sampled_actions = keras.ops.squeeze(actor_model(state), axis=-1)
-    #print(f"State: {state}")
-    print(f"Sampled actions: {sampled_actions}")
     sampled_actions = sampled_actions.numpy()
 
     # We make sure action is within bounds
     legal_action = np.clip(sampled_actions, lower_bound, upper_bound)
-    print (f"Selected action: {legal_action}")
     return [np.squeeze(legal_action)]
 
 
@@ -182,16 +179,12 @@ class Buffer:
         # Training and updating Actor & Critic networks.
         # See Pseudo Code.
         with tf.GradientTape() as tape:
-            print(f"Next state batch: {next_state_batch}")
+            #print(f"Next state batch pre:{next_state_batch.shape}")
             next_state_batch = keras.ops.expand_dims(next_state_batch,0)
-            next_state_batch = keras.ops.expand_dims(next_state_batch,0)
+            #print(f"Next state batch post:{next_state_batch.shape}")
             target_actions = target_actor(next_state_batch, training=True)
             y = reward_batch + gamma * target_critic([next_state_batch, target_actions], training=True)
-            print(f"State batch: {state_batch}")
-            print(f"Action batch: {action_batch}")
             state_batch = keras.ops.expand_dims(state_batch,0)
-            state_batch = keras.ops.expand_dims(state_batch,0)
-            action_batch = keras.ops.expand_dims(action_batch,0)
             action_batch = keras.ops.expand_dims(action_batch,0)
             critic_value = critic_model([state_batch, action_batch], training=True)
             critic_loss = keras.ops.mean(keras.ops.square(y - critic_value))
