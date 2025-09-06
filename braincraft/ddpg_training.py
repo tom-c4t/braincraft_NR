@@ -92,11 +92,13 @@ def get_actor():
     inputs = keras.Input(shape=(None, num_states))
     print(f"Input: {inputs}")
     cell = LeakyRNNCell(units = 1000, leak=0.3)
-    rnn_layer = RNN(cell, return_sequences=True)
+    rnn_layer = RNN(cell, return_sequences=False)
     rnn_output = rnn_layer(inputs)
 
     # Output equation (equation 2)
-    outputs = keras.layers.Dense(1, activation="tanh", use_bias=False, kernel_initializer=last_init)(rnn_output)
+    out = keras.layers.Dense(1000, activation="relu")(rnn_output)
+    out = keras.layers.Dense(1000, activation="relu")(out)
+    outputs = keras.layers.Dense(1, activation="tanh", use_bias=False, kernel_initializer=last_init)(out)
     # Our upper bound is 5.0 (maximum turning angle)
     outputs = outputs * upper_bound
     model = keras.Model(inputs, outputs)
@@ -105,33 +107,31 @@ def get_actor():
 
 # Defining the Critic network
 def get_critic():
-    # State as input
-    state_inputs = keras.Input((batch_size, num_states))
-    state_out = keras.layers.Dense(16, activation="relu")(state_inputs)
-    state_out = keras.layers.Dense(32, activation="relu")(state_out)
+    # input equation (equation 1)
+    critic_inputs = keras.Input(shape=(None, num_states))
+    critic_cell = LeakyRNNCell(units = 1000, leak=0.3)
+    critic_rnn_layer = RNN(critic_cell, return_sequences=False)
+    critic_rnn_output = critic_rnn_layer(critic_inputs)
 
-    # Action as input
-    action_input = keras.Input((None, num_actions))
-    action_out = keras.layers.Dense(32, activation="relu")(action_input)
+    critic_actions = keras.Input(shape=(None, num_actions))
+    critic_action_out = keras.layers.Dense(1000, use_bias=False, activation="relu")(critic_actions)
 
-    # Both are passed through separate layer before concatenating
-    concat = keras.layers.Concatenate()([state_out, action_out])
-
-    out = keras.layers.Dense(256, activation="relu")(concat)
-    out = keras.layers.Dense(256, activation="relu")(out)
-    outputs = keras.layers.Dense(1)(out)
-
-    # Outputs single value for give state-action
-    model = keras.Model([state_inputs, action_input], outputs)
-
-    return model
+    # Combine state and action pathways
+    critic_rnn_output = keras.ops.expand_dims(critic_rnn_output,0)
+    concat = keras.layers.Concatenate()([critic_rnn_output, critic_action_out])
+    out = keras.layers.Dense(1000, activation="relu")(concat)
+    critic_outputs = keras.layers.Dense(1)(out)
+    critic_model = keras.Model([critic_inputs, critic_actions], critic_outputs)
+    return critic_model
 
 
 # Define training hyperparameters
 std_dev = 0.2
 ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev)*np.ones(1))
 actor_model = get_actor()
+actor_model.summary()
 critic_model = get_critic()
+critic_model.summary()
 
 target_actor = get_actor()
 target_critic = get_critic()
@@ -201,7 +201,7 @@ class Buffer:
     # Eager execution is turned on by default in TensorFlow 2. Decorating with tf.function allows
     # TensorFlow to build a static graph out of the logic and computations in our function.
     # This provides a large speed up for blocks of code that contain many small TensorFlow operations such as this one.
-    @tf.function
+    #@tf.function
     def update(
         self,
         state_batch,
@@ -214,8 +214,9 @@ class Buffer:
         with tf.GradientTape() as tape:
             #print(f"Next state batch pre:{next_state_batch.shape}")
             next_state_batch = keras.ops.expand_dims(next_state_batch,0)
-            #print(f"Next state batch post:{next_state_batch.shape}")
+            print(f"Next state batch post:{next_state_batch.shape}")
             target_actions = target_actor(next_state_batch, training=True)
+            print(f"Target actions: {target_actions}")
             y = reward_batch + gamma * target_critic([next_state_batch, target_actions], training=True)
             state_batch = keras.ops.expand_dims(state_batch,0)
             action_batch = keras.ops.expand_dims(action_batch,0)
@@ -223,6 +224,7 @@ class Buffer:
             critic_loss = keras.ops.mean(keras.ops.square(y - critic_value))
 
         critic_grad = tape.gradient(critic_loss, critic_model.trainable_variables)
+        print(f"Critic grad: {critic_grad}")
         critic_optimizer.apply_gradients(
             zip(critic_grad, critic_model.trainable_variables)
         )
@@ -235,6 +237,7 @@ class Buffer:
             actor_loss = -keras.ops.mean(critic_value)
 
         actor_grad = tape.gradient(actor_loss, actor_model.trainable_variables)
+        print(f"Actor grad: {actor_grad}")
         actor_optimizer.apply_gradients(
             zip(actor_grad, actor_model.trainable_variables)
         )
