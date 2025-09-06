@@ -73,6 +73,7 @@ class LeakyRNNCell(keras.layers.Layer):
                                  name="W")
 
     def call(self, inputs, states):
+        # print(f"Inputs: {inputs.shape}, states: {states}")
         prev_state = states[0]
         # f(W * X + Win * I)
         preact = tf.matmul(prev_state, self.W) + tf.matmul(inputs, self.Win)
@@ -90,7 +91,7 @@ def get_actor():
 
     # input equation (equation 1)
     inputs = keras.Input(shape=(None, num_states))
-    print(f"Input: {inputs}")
+    # print(f"Input: {inputs}")
     cell = LeakyRNNCell(units = 1000, leak=0.3)
     rnn_layer = RNN(cell, return_sequences=False)
     rnn_output = rnn_layer(inputs)
@@ -98,7 +99,8 @@ def get_actor():
     # Output equation (equation 2)
     out = keras.layers.Dense(1000, activation="relu")(rnn_output)
     out = keras.layers.Dense(1000, activation="relu")(out)
-    outputs = keras.layers.Dense(1, activation="tanh", use_bias=False, kernel_initializer=last_init)(out)
+    output_layer = keras.layers.Dense(1, activation="tanh", use_bias=False, kernel_initializer=last_init)
+    outputs = output_layer(out)
     # Our upper bound is 5.0 (maximum turning angle)
     outputs = outputs * upper_bound
     model = keras.Model(inputs, outputs)
@@ -117,7 +119,7 @@ def get_critic():
     critic_action_out = keras.layers.Dense(1000, use_bias=False, activation="relu")(critic_actions)
 
     # Combine state and action pathways
-    critic_rnn_output = keras.ops.expand_dims(critic_rnn_output,0)
+    critic_rnn_output = keras.ops.expand_dims(critic_rnn_output,1)
     concat = keras.layers.Concatenate()([critic_rnn_output, critic_action_out])
     out = keras.layers.Dense(1000, activation="relu")(concat)
     critic_outputs = keras.layers.Dense(1)(out)
@@ -157,10 +159,10 @@ tau = 0.005
 # Return an action
 def policy(state, noise_object):
     sampled_actions = keras.ops.squeeze(actor_model(state), axis=-1)
-    print(f"Sampled without noise: {sampled_actions}")
+    # print(f"Sampled without noise: {sampled_actions}")
     noise = noise_object()
     sampled_actions = sampled_actions.numpy() + noise
-    print(f"Sampled with noise: {sampled_actions}")
+    # print(f"Sampled with noise: {sampled_actions}")
 
     # We make sure action is within bounds
     legal_action = np.clip(sampled_actions, lower_bound, upper_bound)
@@ -213,18 +215,18 @@ class Buffer:
         # See Pseudo Code.
         with tf.GradientTape() as tape:
             #print(f"Next state batch pre:{next_state_batch.shape}")
-            next_state_batch = keras.ops.expand_dims(next_state_batch,0)
-            print(f"Next state batch post:{next_state_batch.shape}")
+            next_state_batch = keras.ops.expand_dims(next_state_batch,1)
+            # print(f"Next state batch post:{next_state_batch.shape}")
             target_actions = target_actor(next_state_batch, training=True)
-            print(f"Target actions: {target_actions}")
+            # print(f"Target actions: {target_actions}")
             y = reward_batch + gamma * target_critic([next_state_batch, target_actions], training=True)
-            state_batch = keras.ops.expand_dims(state_batch,0)
-            action_batch = keras.ops.expand_dims(action_batch,0)
+            state_batch = keras.ops.expand_dims(state_batch,1)
+            action_batch = keras.ops.expand_dims(action_batch,1)
             critic_value = critic_model([state_batch, action_batch], training=True)
             critic_loss = keras.ops.mean(keras.ops.square(y - critic_value))
 
         critic_grad = tape.gradient(critic_loss, critic_model.trainable_variables)
-        print(f"Critic grad: {critic_grad}")
+        # print(f"Critic grad: {critic_grad}")
         critic_optimizer.apply_gradients(
             zip(critic_grad, critic_model.trainable_variables)
         )
@@ -237,7 +239,7 @@ class Buffer:
             actor_loss = -keras.ops.mean(critic_value)
 
         actor_grad = tape.gradient(actor_loss, actor_model.trainable_variables)
-        print(f"Actor grad: {actor_grad}")
+        # print(f"Actor grad: {actor_grad}")
         actor_optimizer.apply_gradients(
             zip(actor_grad, actor_model.trainable_variables)
         )
@@ -287,7 +289,7 @@ def training_function():
         #print(f"Prev state: {prev_state}")
         prev_energy = bot.energy
         tf_prev_state = keras.ops.expand_dims(keras.ops.convert_to_tensor(prev_state),0)
-        tf_prev_state = keras.ops.expand_dims(tf_prev_state,0)
+        tf_prev_state = keras.ops.expand_dims(tf_prev_state,1)
 
         # Choose action and interact
         action = policy(tf_prev_state, ou_noise)
@@ -296,7 +298,7 @@ def training_function():
         reward = energy - prev_energy
         state[:64] = depth
         state[64:] = hit, energy, 1.0
-        #print(f"Reward: {reward}")
+        print(f"Reward: {reward}")
         #print(f"State: {state}")
 
         # Update Experience Replay Buffer
@@ -308,7 +310,7 @@ def training_function():
         update_target(target_critic, critic_model, tau)
 
         # Return the weights
-        Wout = actor_model.get_layer("dense").get_weights()[0]
+        Wout = actor_model.get_layer("dense_2").get_weights()[0]
         Win = actor_model.get_layer("rnn").get_weights()[0]
         W = actor_model.get_layer("rnn").get_weights()[1]
 
@@ -329,9 +331,30 @@ if __name__ == "__main__":
     print(f"Starting training for 100 seconds (user time)")
     model = train(training_function, timeout=100)
 
+    #print(f"Win {model[0]}\n")
+    #print(f"W {model[1]}\n")
+    print(f"Wout {model[2].shape}\n")
+    #print(f"warmup {model[3]}\n")
+    #print(f"leak {model[4]}\n")
+    #print(f"f {model[5]}\n")
+    #print(f"g {model[6]}\n")
+
+    n = 64
+    I, X = np.zeros((n+3,1)), np.zeros((1000,1))
+    
+    bot = Bot()
+    energy = bot.energy
+
+    # The higher, the closer
+    I[:n,0] = 1 - bot.camera.depths
+    
+    I[n:,0] = bot.hit, bot.energy, 1.0
+    X = (1-model[4])*X + model[4]*model[5](np.dot(model[0], I) + np.dot(model[1], X))
+    #print(np.dot(model[2], model[6](X)))
+
     # Evaluation
     start_time = time.time()
-    score, std = evaluate(model, Bot, Environment, debug=False, seed=None)
+    score, std = evaluate(model, Bot, Environment, debug=False, seed=78)
     elapsed = time.time() - start_time
     print(f"Evaluation completed after {elapsed:.2f} seconds")
     print(f"Final score: {score:.2f} ± {std:.2f}")
