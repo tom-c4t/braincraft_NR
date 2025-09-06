@@ -20,6 +20,34 @@ upper_bound = 5 # upper bound for action
 lower_bound = -5 # lower bound for action
 batch_size = 64 # batch size
 
+# noise class
+class OUActionNoise:
+    def __init__(self, mean, std_deviation, theta=0.15, dt=1e-2, x_initial=None):
+        self.theta = theta
+        self.mean = mean
+        self.std_dev = std_deviation
+        self.dt = dt
+        self.x_initial = x_initial
+        self.reset()
+
+    def __call__(self):
+        # Formula taken from https://www.wikipedia.org/wiki/Ornstein-Uhlenbeck_process
+        x = (
+            self.x_prev
+            + self.theta * (self.mean - self.x_prev) * self.dt
+            + self.std_dev * np.sqrt(self.dt) * np.random.normal(size=self.mean.shape)
+        )
+        # Store x into x_prev
+        # Makes next noise dependent on current one
+        self.x_prev = x
+        return x
+
+    def reset(self):
+        if self.x_initial is not None:
+            self.x_prev = self.x_initial
+        else:
+            self.x_prev = np.zeros_like(self.mean)
+
 # Define a customized Keras layer for equation 1
 class LeakyRNNCell(keras.layers.Layer):
     def __init__(self, units, leak=0.5, activation="tanh", **kwargs):
@@ -100,6 +128,8 @@ def get_critic():
 
 
 # Define training hyperparameters
+std_dev = 0.2
+ou_noise = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev)*np.ones(1))
 actor_model = get_actor()
 critic_model = get_critic()
 
@@ -125,9 +155,12 @@ tau = 0.005
 
 
 # Return an action
-def policy(state):
+def policy(state, noise_object):
     sampled_actions = keras.ops.squeeze(actor_model(state), axis=-1)
-    sampled_actions = sampled_actions.numpy()
+    print(f"Sampled without noise: {sampled_actions}")
+    noise = noise_object()
+    sampled_actions = sampled_actions.numpy() + noise
+    print(f"Sampled with noise: {sampled_actions}")
 
     # We make sure action is within bounds
     legal_action = np.clip(sampled_actions, lower_bound, upper_bound)
@@ -254,13 +287,13 @@ def training_function():
         tf_prev_state = keras.ops.expand_dims(tf_prev_state,0)
 
         # Choose action and interact
-        action = policy(tf_prev_state)
+        action = policy(tf_prev_state, ou_noise)
         action = action[0]
         energy, hit, depth, values = bot.forward(dtheta=action, environment=environment)
         reward = energy - prev_energy
         state[:64] = depth
         state[64:] = hit, energy, 1.0
-        print(f"Reward: {reward}")
+        #print(f"Reward: {reward}")
         #print(f"State: {state}")
 
         # Update Experience Replay Buffer
