@@ -127,7 +127,7 @@ tau = 0.005
 # Return an action
 def policy(state):
     sampled_actions = keras.ops.squeeze(actor_model(state), axis=-1)
-    print(f"State: {state}")
+    #print(f"State: {state}")
     print(f"Sampled actions: {sampled_actions}")
     sampled_actions = sampled_actions.numpy()
 
@@ -255,7 +255,7 @@ def training_function():
         state = np.zeros((num_states))
         prev_state[:64] = bot.camera.depths
         prev_state[64:] = bot.hit, bot.energy, 1.0
-        print(f"Prev state: {prev_state}")
+        #print(f"Prev state: {prev_state}")
         prev_energy = bot.energy
         tf_prev_state = keras.ops.expand_dims(keras.ops.convert_to_tensor(prev_state),0)
         tf_prev_state = keras.ops.expand_dims(tf_prev_state,0)
@@ -268,7 +268,7 @@ def training_function():
         state[:64] = depth
         state[64:] = hit, energy, 1.0
         print(f"Reward: {reward}")
-        print(f"State: {state}")
+        #print(f"State: {state}")
 
         # Update Experience Replay Buffer
         buffer.record((prev_state, action, reward, state))
