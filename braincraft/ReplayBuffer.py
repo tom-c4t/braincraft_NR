@@ -8,23 +8,11 @@ Replay Buffer
 
 from collections import deque
 import random
-import gym 
 import numpy as np
 
 # ===========================
 #   Utility Parameters
 # ===========================
-# Render gym env during training
-RENDER_ENV = True
-# Use Gym Monitor
-GYM_MONITOR_EN = True
-# Gym environment
-ENV_NAME = 'Pendulum-v0'
-# Directory for storing gym results
-MONITOR_DIR = './results/gym_ddpg'
-# Directory for storing tensorboard summary results
-SUMMARY_DIR = './results/tf_ddpg'
-RANDOM_SEED = 1234
 # Size of replay buffer
 BUFFER_SIZE = 10000
 MINIBATCH_SIZE = 64

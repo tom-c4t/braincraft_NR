@@ -153,8 +153,8 @@ class CriticNet(object):
       Update the weights of the target network.
      -tau: coefficent for tracking the learned network.
      """
-    self.params['W2_tgt'] = tau*self.params['W2']+(1-tau)*self.params['W2_tgt']
-    self.params['W1_tgt'] = tau*self.params['W1']+(1-tau)*self.params['W1_tgt']
+    self.W2_tgt = tau*self.W2+(1-tau)*self.W2_tgt
+    self.W1_tgt = tau*self.W1+(1-tau)*self.W1_tgt
         
     
   def predict(self, I, action, target=False):

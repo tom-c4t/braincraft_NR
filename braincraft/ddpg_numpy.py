@@ -35,8 +35,8 @@ action_dim = 1
 action_bound = ACTION_BOUND
 
 # Create actor and critic nets
-actor = ActorNet(state_dim, HIDDEN1_UNITS, action_dim)
-critic = CriticNet(state_dim, action_dim, HIDDEN1_UNITS, action_dim)
+actor = actor_net.ActorNet(state_dim, HIDDEN1_UNITS, action_dim)
+critic = critic_net.CriticNet(state_dim, action_dim, HIDDEN1_UNITS, action_dim)
 
 # Initialize replay buffer
 
@@ -44,7 +44,7 @@ buff = ReplayBuffer(BUFFER_SIZE)
 step=0
 reward_result=[]
 
-def train():
+def ddpg_player():
     env = Environment()
     for i in range(MAX_EPISODES):
         bot = Bot()
@@ -117,6 +117,9 @@ def train():
         print("TOTAL REWARD @ " + str(i) +"-th Episode:" + str(total_reward))
         print("Total Step: " + str(step))
         print("")
+    # model = W_in, W, W_out, 0, leak, f, g
+    model = (actor.Win, actor.W, actor.Wout, 0, actor.leak, f, g)
+    return model
 
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
@@ -130,7 +133,7 @@ if __name__ == "__main__":
     # Training (100 seconds)
     np.random.seed(seed)
     print(f"Starting training for 100 seconds (user time)")
-    model = train(random_player, timeout=100)
+    model = train(ddpg_player, timeout=100)
 
     # Evaluation
     start_time = time.time()
