@@ -52,6 +52,7 @@ def ddpg_player():
         s_t_1 = np.zeros((state_dim,))
         done = False
         total_reward = 0.
+        counter = 0
         while bot.energy() > 0:
             loss=0
 
@@ -60,7 +61,7 @@ def ddpg_player():
             # Select action according to the cuurent policy and exploration noise    
             # add noise in the form of 1./(1.+i+j), decaying over episodes and
             # steps, otherwise a_t will be the same, since s is fixed per episode.
-            a_t = actor.predict(np.reshape(s_t,(1,3)), ACTION_BOUND, target=False)+1./(1.+i+j)
+            a_t = actor.predict(np.reshape(s_t,(1,3)), ACTION_BOUND, target=False)+1./(1.+i+counter)
             
             # Execute action a_t and observe reward r_t and new state s_{t+1}
             energy, hit, distances, color = bot.forward(a_t, env, debug=False)
@@ -105,6 +106,8 @@ def ddpg_player():
                 # Update target networks
                 actor.train_target(TAU)
                 critic.train_target(TAU)
+                
+            counter += 1
                 
             s_t = s_t_1
             total_reward += r_t    
