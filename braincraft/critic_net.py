@@ -125,14 +125,14 @@ class CriticNet(object):
     
     
   # train critic network so that estimated Q values are close to true Q values
-  def train(self, I, action, reward, I_t1, action_t1, Y_tgt):
+  def train(self, I, action, reward, I_t1, Y_tgt):
     """
     Train this neural network using adam optimizer.
     Inputs:
     - I: A numpy array of shape (N, D) giving training data.
     """
     # Compute forward pass and gradients using the current minibatch
-    critic_Qs, grads_critic = self.evaluate_gradient(I, action, reward, I_t1, action_t1, Y_tgt)
+    critic_Qs, grads_critic = self.evaluate_gradient(I, action, reward, I_t1, Y_tgt)
     # calculate the loss update which is then summed up in ddpg_numpy.py
     critic_loss_update = (Y_tgt - critic_Qs)**2
     # Update the weights using adam optimizer

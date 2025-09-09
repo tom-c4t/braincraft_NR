@@ -136,9 +136,9 @@ class ActorNet(object):
       Update the weights of the target network.
      -tau: coefficent for tracking the learned network.
      """
-    self.params['Wout_tgt'] = tau*self.params['Wout']+(1-tau)*self.params['Wout_tgt']
-    self.params['W_tgt'] = tau*self.params['W']+(1-tau)*self.params['W_tgt']
-    self.params['Win_tgt'] = tau*self.params['Win']+(1-tau)*self.params['Win_tgt']
+    self.Wout_tgt = tau*self.Wout+(1-tau)*self.Wout_tgt
+    self.W_tgt = tau*self.W+(1-tau)*self.W_tgt
+    self.Win_tgt = tau*self.Win+(1-tau)*self.Win_tgt
 
   def predict(self, I, target=False):
     """
