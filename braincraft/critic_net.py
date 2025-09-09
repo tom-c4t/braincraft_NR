@@ -9,37 +9,31 @@ class CriticNet(object):
   - The net also has an input dimension of (N, A), where A is the cardinality of
   the action space.
   
-  - There are three hidden layers, with dimension of H1, H2, and H3, respectively.  
+  - There are one hidden layer, with dimension of hidden_size.
   
-  - The output provides an Q-value vetcor with the dimenson of A. 
-  
-  - The state input connect to the first hidden layer.
-  
-  - The action input bypass the first hidden layer and connected directly to 
-  the second hidden layer
+  - The state input connect to the first layer.
   
   - The outputs (from action and state) at the second hidden layer are summed up.
   
-  - The network uses a ReLU nonlinearity for the first, second and 
-    the third layer and uses leaner activation
+  - The network uses tanh for the first layer and uses tanh activation
     for the final layer. 
 """
 
-  def __init__(self, input_size, hidden_size, output_size, weight=None):
+  def __init__(self, input_size, hidden_size, output_size):
     """
     Initialize the model. Weights are initialized to small random values and
     biases are initialized to zero. Weights and biases are stored in the
-    variable self.params, which is a dictionary with the following keys:
+    variable self.params, which is a dictionary with the folloW1g keys:
 
-    Win: Input layer weights; has shape (D, H)
-    W: Hidden layer weights; has shape (H, H)
-    Wout: Output layer weights, has shape (H, A)
+    W1: Input layer weights; has shape (input_size, hidden_size)
+    W: Hidden layer weights; has shape (hidden_size, hidden_size)
+    W2: Output layer weights, has shape (hidden_size, output_size)
     
     We also have the weights for a target network (same architecture but 
     different weights)
-    Win_tgt: Input layer weights; has shape (D, H)
-    W_tgt: Hidden layer weights; has shape (H, H)
-    Wout_tgt: Output layer weights, has shape (H, A)
+    W1_tgt: Input layer weights; has shape (input_size, hidden_size)
+    W_tgt: Hidden layer weights; has shape (hidden_size, hidden_size)
+    W2_tgt: Output layer weights, has shape (hidden_size, output_size)
 
 
     Inputs:
@@ -48,228 +42,109 @@ class CriticNet(object):
     - output_size: The continuous variables that constitutes an action vector
       of A dimension.
     """
-    self.params = {}
-    if weight == None:
-        self.params['Win'] = self._uniform_init(input_size, hidden_size)
-        self.params['W'] = self._uniform_init(hidden_size, hidden_size)
-        self.params['Wout'] = self._uniform_init(hidden_size, output_size)
-    else: 
-        self.params['Win'] = weight['Win']
-        self.params['W'] = weight['W']
-        self.params['Wout'] = weight['Wout']
-        
-    # Initialization based on "Continuous control with deep reinformcement 
-    # learning"
-#    self.params['Win_tgt'] = self.params['Win']
-#    self.params['b1_tgt'] = self.params['b1']
-#    self.params['W_tgt'] = self.params['W']
-#    self.params['b2_S_tgt'] = self.params['b2_S']
-#    self.params['W2_A_tgt'] = self.params['W2_A']
-#    self.params['b2_A_tgt'] = self.params['b2_A']
-#    self.params['Wout_tgt'] = self.params['Wout']
-#    self.params['b3_tgt'] = self.params['b3']
-#    self.params['W4_tgt'] = self.params['W4']
-#    self.params['b4_tgt'] = self.params['b4']
-
-    self.params['Win_tgt'] = self._uniform_init(input_size, hidden_size)
-    self.params['W_tgt'] = self._uniform_init(hidden_size, hidden_size)
-    self.params['Wout_tgt'] = self._uniform_init(hidden_size, hidden_size)
-
+    self.W1 = self._uniform_init(input_size + 1, hidden_size)
+    self.W2 = self._uniform_init(hidden_size, output_size)
+    self.X = None       # state of hidden neurons in critic 
+    self.W1_tgt = self._uniform_init(input_size + 1, hidden_size)
+    self.W2_tgt = self._uniform_init(hidden_size, output_size)
+    self.X_tgt = None   # state of hidden neurons in target critic
     
-    # Initialize the dictionary for optimization configuration for diffrent 
-    # layers
-    
-    self.optm_cfg ={}
-    self.optm_cfg['Win'] = None
-    self.optm_cfg['W'] = None
-    self.optm_cfg['Wout'] = None
+    self.optm_cfg_W1 = None
+    self.optm_cfg_W2 = None
+
+    # additional params:
+    self.gamma = 0.9  # discount factor for Q-learning
+    self.lr = 0.003  # learning rate for the critic network
 
 
-  def evaluate_gradient(self, I, actions, leak, Y_tgt, use_target=False):
+  def evaluate_gradient(self, I, action, rewards, Y_tgt):
     """
-    Compute the Q-value and gradients for the network based on the input X_S,
-    X_A, Y_tgt
+    Compute the Q-value and gradients for the network based on the input I, action , Y_tgt
     
     Inputs:
-    - X_S: Input for state, shape (N, S), N is the batch size
-    - X_A: Input for actio, shape (N, A), N is the batch size
+    - I: Input for state
+    - action: Input for action
     _ Y_tgt: Target vaule for Q-value, used for update weights (via regression)
-    - use_target: use default weights if False; otherwise use target weights.
+    - batch_size
     
    Returns:
-     A tuple of:
-    - Q_values: a continuous vector, has the same dimension as A
-    - loss: 
-    - grads: Dictionary mapping parameter names to gradients of those parameters; 
-      has the same keys as self.params.
+    - Q values from critic
+    - gradients of the weights and biases in the network
     """
-    # Unpack variables from the params dictionary
-    if not use_target:
-        Win= self.params['Win']
-        W= self.params['W']
-        Wout= self.params['Wout']
-    else:
-        Win = self.params['Win_tgt']
-        W = self.params['W_tgt']
-        Wout = self.params['Wout_tgt']
+    # predict Q value for state-action pair
+    critic_Qs = self.predict(I, action)
 
+    td_error = (Y_tgt - critic_Qs)  # shape: (batch_size, output_size)
 
-    # Compute the forward pass
-    # The first hidden layer
-    output= None
-    scores = None
-    z1=np.dot(I,Win) # Win * I(t)
-    z2=np.dot(X,W) # W * X(t)
-    H1 = np.tanh(z1+z2) #f (W*X(t)+Win*I(t))
-    X = (1-leak)*X + leak*H1 # leaky integration
-    scores=np.tanh(X)
-    output=np.dot(scores,Wout)
+    batch_size = I.shape[0]
+    # Compute the gradients
 
-    Q_values=output # q_values is the scores in this case, due to the linear
-                    # activation
-    batch_size=np.shape(I)[0]       
-     # loss
-    loss =np.sum((Q_values-Y_tgt)**2, axis=0)/(1.0*batch_size)
-    loss = loss[0]
-    # error
-    error=(Q_values-Y_tgt)   
-    
-    # Back-propagate to second hidden layer
-    # as a sanity check out1 and z3 should have the same shape
-    # Backward pass
-    grads = {}
-    
-    grad_output=error*2/batch_size
+    h = np.tanh(np.concatenate([I, action], axis=1) @ self.W1)
+    dQ_dW2 = h.T @ td_error / batch_size
 
-    # 1. Gradient of output w.r.t Wout
-    dWout = np.dot(scores.T, grad_output)
-    
-    # 2. Gradient through tanh(X_new)
-    dscores = np.dot(grad_output, Wout.T)
-    dX_new = dscores * (1 - scores**2)  # tanh derivative: 1 - tanh²(x)
-    
-    # 3. Gradient through leaky integration
-    dH1 = leak * dX_new
-    dX_prev = (1-leak) * dX_new
-    
-    # 4. Gradient through tanh(z1+z2)
-    dz = dH1 * (1 - H1**2)  # tanh derivative
-    
-    # 5. Gradient w.r.t Win and W
-    dWin = np.dot(I.T, dz)
-    dW = np.dot(X.T, dz)
-    
-    grads['Win'] = dWin
-    grads['W'] = dW
-    grads['Wout'] = dWout
-    
-                    
-    return grads,loss #, Q_values
-    
-    
-  def evaluate_action_gradient(self, I, actions, leak, use_target=False):
+    dh = td_error @ self.W2.T * (1 - h**2)  # shape: (batch_size, hidden_size)
+    x = np.concatenate([I, action], axis=1)
+    dQ_dW1 = x.T @ dh / batch_size
+
+    grads = (dQ_dW1, dQ_dW2)
+
+    return critic_Qs, grads
+  
+
+  # gradient of the Q value for a action with the weights from the critic 
+  def evaluate_action_gradient(self, I, action, loss, use_target=False):
     """
     Inputs:
-    - X_S: Input for state, shape (N, S), N is the batch size
-    - X_A: Input for actio, shape (N, A), N is the batch size
+    - I: Input for state, shape (N, S), N is the batch size
+    - action: Input for action, shape (N, A), N is the batch size
     
     - use_target: use default weights if False; otherwise use target weights.
     
    Returns:
-     A tuple of:
-    - Q_values: a continuous vector, has the same dimension as A
-    - loss: 
-    - grads: Dictionary mapping parameter names to gradients of those parameters; 
-      has the same keys as self.params.
+    - grads_action: gradient of the Q value for a action with the weights from the critic
     """
     # Unpack variables from the params dictionary
     if not use_target:
-        Win = self.params['Win']
-        W= self.params['W']
-        Wout = self.params['Wout']
+        W1 = self.params['W1']
+        W2 = self.params['W2']
     else:
-        Win = self.params['Win_tgt']
-        W= self.params['W_tgt']
-        Wout = self.params['Wout_tgt']
+        W1 = self.params['W1_tgt']
+        W2 = self.params['W2_tgt']
         
-   
-    # Compute the forward pass
-    # The first hidden layer
-    # Compute the forward pass
-    # The first hidden layer
-    output= None
-    scores = None
-    z1=np.dot(I,Win) # Win * I(t)
-    z2=np.dot(X,W) # W * X(t)
-    H1 = np.tanh(z1+z2) #f (W*X(t)+Win*I(t))
-    X = (1-leak)*X + leak*H1 # leaky integration
-    scores=np.tanh(X)
-    output=np.dot(scores,Wout)
-        
-    grads_action = {}
-    
-    grad_output=error*2/batch_size
+    critic_Qs = self.predict(I, action)
 
-    # 1. Gradient of output w.r.t Wout
-    dWout = np.dot(scores.T, grad_output)
-    
-    # 2. Gradient through tanh(X_new)
-    dscores = np.dot(grad_output, Wout.T)
-    dX_new = dscores * (1 - scores**2)  # tanh derivative: 1 - tanh²(x)
-    
-    # 3. Gradient through leaky integration
-    dH1 = leak * dX_new
-    dX_prev = (1-leak) * dX_new
-    
-    # 4. Gradient through tanh(z1+z2)
-    dz = dH1 * (1 - H1**2)  # tanh derivative
-    
-    # 5. Gradient w.r.t Win and W
-    dWin = np.dot(I.T, dz)
-    dW = np.dot(X.T, dz)
-    
-    grads['Win'] = dWin
-    grads['W'] = dW
-    grads['Wout'] = dWout
+    td_error = (loss - critic_Qs)  # shape: (batch_size, output_size)
+
+    # Compute the gradients
+
+    h = np.tanh(np.concatenate([I, action], axis=1) @ self.W1)
+
+    dQ_da = (td_error @ self.W2.T * (1- h**2)) @ self.W1[-1]
                     
-    return grads_action  
+    return dQ_da
     
     
-    
-  def train(self, X_S, X_A, Y_tgt):
+  # train critic network so that estimated Q values are close to true Q values
+  def train(self, I, action, reward, I_t1, action_t1, Y_tgt):
     """
     Train this neural network using adam optimizer.
     Inputs:
-    - X: A numpy array of shape (N, D) giving training data.
+    - I: A numpy array of shape (N, D) giving training data.
     """
-    # Compute out and gradients using the current minibatch
-    grads, loss = self.evaluate_gradient(X_S, X_A, Y_tgt, use_target=False)
+    # Compute forward pass and gradients using the current minibatch
+    critic_Qs, grads_critic = self.evaluate_gradient(I, action, reward, I_t1, action_t1, Y_tgt)
+    # calculate the loss update which is then summed up in ddpg_numpy.py
+    critic_loss_update = (Y_tgt - critic_Qs)**2
     # Update the weights using adam optimizer
     #print ('grads W4', grads['W4'])
-    self.params['W4'] = self._adam(self.params['W4'], grads['W4'], config=self.optm_cfg['W4'])[0]
-    self.params['Wout'] = self._adam(self.params['Wout'], grads['Wout'], config=self.optm_cfg['Wout'])[0]
-    self.params['W'] = self._adam(self.params['W'], grads['W'], config=self.optm_cfg['W'])[0]
-    self.params['W2_A'] = self._adam(self.params['W2_A'], grads['W2_A'], config=self.optm_cfg['W2_A'])[0]    
-    self.params['Win'] = self._adam(self.params['Win'], grads['Win'], config=self.optm_cfg['Win'])[0]
-    self.params['b4'] = self._adam(self.params['b4'], grads['b4'], config=self.optm_cfg['b4'])[0]
-    self.params['b3'] = self._adam(self.params['b3'], grads['b3'], config=self.optm_cfg['b3'])[0]
-    self.params['b2_S'] = self._adam(self.params['b2_S'], grads['b2_S'], config=self.optm_cfg['b2_S'])[0]
-    self.params['b2_A'] = self._adam(self.params['b2_A'], grads['b2_A'], config=self.optm_cfg['b2_A'])[0]
-    self.params['b1'] = self._adam(self.params['b1'], grads['b1'], config=self.optm_cfg['b1'])[0]
+    self.W2 = self._adam(self.W2, grads_critic[1], config=self.optm_cfg_W2)[0]
+    self.W1 = self._adam(self.W1, grads_critic[0], config=self.optm_cfg_W1)[0]
     
     # Update the configuration parameters to be used in the next iteration
-    self.optm_cfg['W4'] = self._adam(self.params['W4'], grads['W4'], config=self.optm_cfg['W4'])[1]
-    self.optm_cfg['Wout'] = self._adam(self.params['Wout'], grads['Wout'], config=self.optm_cfg['Wout'])[1]
-    self.optm_cfg['W'] = self._adam(self.params['W'], grads['W'], config=self.optm_cfg['W'])[1]
-    self.optm_cfg['W2_A'] = self._adam(self.params['W2_A'], grads['W2_A'], config=self.optm_cfg['W2_A'])[1]
-    self.optm_cfg['Win'] = self._adam(self.params['Win'], grads['Win'], config=self.optm_cfg['Win'])[1]
-    self.optm_cfg['b4'] = self._adam(self.params['b4'], grads['b4'], config=self.optm_cfg['b4'])[1]
-    self.optm_cfg['b3'] = self._adam(self.params['b3'], grads['b3'], config=self.optm_cfg['b3'])[1]
-    self.optm_cfg['b2_S'] = self._adam(self.params['b2_S'], grads['b2_S'], config=self.optm_cfg['b2_S'])[1]
-    self.optm_cfg['b2_A'] = self._adam(self.params['b2_A'], grads['b2_A'], config=self.optm_cfg['b2_A'])[1]
-    self.optm_cfg['b1'] = self._adam(self.params['b1'], grads['b1'], config=self.optm_cfg['b1'])[1]
+    self.optm_cfg_W2 = self._adam(self.W2, grads_critic[1], config=self.optm_cfg_W2)[1]
+    self.optm_cfg_W1 = self._adam(self.W1, grads_critic[0], config=self.optm_cfg_W1)[1]
 
-    return loss
+    return critic_loss_update
     
     
  
@@ -278,64 +153,36 @@ class CriticNet(object):
       Update the weights of the target network.
      -tau: coefficent for tracking the learned network.
      """
-    self.params['W4_tgt'] = tau*self.params['W4']+(1-tau)*self.params['W4_tgt'] 
-    self.params['Wout_tgt'] = tau*self.params['Wout']+(1-tau)*self.params['Wout_tgt']
-    self.params['W_tgt'] = tau*self.params['W']+(1-tau)*self.params['W_tgt']
-    self.params['W2_A_tgt'] = tau*self.params['W2_A']+(1-tau)*self.params['W2_A_tgt']
-    self.params['Win_tgt'] = tau*self.params['Win']+(1-tau)*self.params['Win_tgt']
+    self.params['W2_tgt'] = tau*self.params['W2']+(1-tau)*self.params['W2_tgt']
+    self.params['W1_tgt'] = tau*self.params['W1']+(1-tau)*self.params['W1_tgt']
         
-    self.params['b4_tgt'] = tau*self.params['b4']+(1-tau)*self.params['b4_tgt']
-    self.params['b3_tgt'] = tau*self.params['b3']+(1-tau)*self.params['b3_tgt']
-    self.params['b2_S_tgt'] = tau*self.params['b2_S']+(1-tau)*self.params['b2_S_tgt']
-    self.params['b2_A_tgt'] = tau*self.params['b2_A']+(1-tau)*self.params['b2_A_tgt']
-    self.params['b1_tgt'] = tau*self.params['b1']+(1-tau)*self.params['b1_tgt']
-
-
     
-  def predict(self, X_S, X_A, target=False):
+  def predict(self, I, action, target=False):
     """
     Use the trained weights of this network to predict the Q vector for a 
     given state.
 
     Inputs:
-    - X: numpy array of shape (N, D) 
+    - I: states of shape (D) 
+    - action: scalar action
     - target: if False, use normal weights, otherwise use learned weight.
-    - action_bound: the scaling factor for the action, which is environment
-                    dependent.
 
     Returns:
-    - y_pred: A numpy array of shape (N,) 
+    - Q: Q value for the (state, action) pair 
     
     """
-    y_pred = None
-    
     if not target:
-        Win, b1 = self.params['Win'], self.params['b1']
-        W, b2_S = self.params['W'], self.params['b2_S']
-        W2_A, b2_A = self.params['W2_A'], self.params['b2_A']
-        Wout, b3 = self.params['Wout'], self.params['b3']
-        W4, b4 = self.params['W4'], self.params['b4']
-
+        W1 = self.W1
+        W2= self.W2
     else:
-        Win, b1 = self.params['Win_tgt'], self.params['b1_tgt']
-        W, b2_S = self.params['W_tgt'], self.params['b2_S_tgt']
-        W2_A, b2_A = self.params['W2_A_tgt'], self.params['b2_A_tgt']
-        Wout, b3 = self.params['Wout_tgt'], self.params['b3_tgt']
-        W4, b4 = self.params['W4_tgt'], self.params['b4_tgt']
+        W1 = self.W1_tgt
+        W2 = self.W2_tgt
 
-    H1 = np.maximum(0,X_S.dot(Win)+b1)
-    
-    H2 = np.dot(H1,W)+b2_S + np.dot(X_A, W2_A)+b2_A
-    
-    H3 = np.maximum(0,H2.dot(Wout)+b3)
-    
-    score=np.dot(H3, W4)+b4
-    
-    #print "scores=:", score
-    y_pred=score
-    
+    x = np.concatenate([I, action], axis=1)
+    h = np.tanh(x @  W1)
+    q_value = h @ W2
+    return q_value
 
-    return y_pred
 
   def _adam(self, x, dx, config=None):
       """

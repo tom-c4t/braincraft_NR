@@ -38,22 +38,25 @@ class ActorNet(object):
       of A dimension.
     """
     
+    self.Win = self._uniform_init(input_size, hidden_size)
+    self.W = self._uniform_init(hidden_size, hidden_size)
+    self.Wout = np.random.uniform(-3e-3, 3e-3, (hidden_size, output_size)) 
     
-    self.params = {}
-    self.params['Win'] = self._uniform_init(input_size, hidden_size)
-    self.params['W'] = self._uniform_init(hidden_size, hidden_size)
-    self.params['Wout'] = np.random.uniform(-3e-3, 3e-3, (hidden_size, output_size)) 
+    self.Win_tgt = self._uniform_init(input_size, hidden_size)
+    self.W_tgt = self._uniform_init(hidden_size, hidden_size)
+    self.Wout_tgt = np.random.uniform(-3e-3, 3e-3, (hidden_size, output_size))
     
-    self.params['Win_tgt'] = self._uniform_init(input_size, hidden_size)
-    self.params['W_tgt'] = self._uniform_init(hidden_size, hidden_size)
-    self.params['Wout_tgt'] = np.random.uniform(-3e-3, 3e-3, (hidden_size, output_size))
+    self.optm_cfg_Win = None
+    self.optm_cfg_W = None
+    self.optm_cfg_Wout = None
+
+    # additional params:
+    self.leak = 0.2  # leaking rate for leaky integration
+    self.X_1 = None # store previous hidden state
+    self.X = None   # state of hidden neurons
+    self.X_tgt = None   # state of hidden neurons in target actor
     
-    self.optm_cfg ={}
-    self.optm_cfg['Win'] = None
-    self.optm_cfg['W'] = None
-    self.optm_cfg['Wout'] = None
-    
-  def evaluate_gradient(self, I, X, leak, action_grads, action_bound, target=False):
+  def evaluate_gradient(self, I, dQ_da, action_bound, target=False):
     """
     Compute the action and gradients for the network based on the input I
     
@@ -73,53 +76,41 @@ class ActorNet(object):
     """
     # Unpack variables from the params dictionary
     if not target:
-        Win = self.params['Win']
-        W = self.params['W']
-        Wout= self.params['Wout']
+        Win = self.Win
+        W = self.W
+        Wout= self.Wout
     else:
-        Win = self.params['Win_tgt']
-        W = self.params['W_tgt']
-        Wout = self.params['Wout_tgt']
+        Win = self.Win_tgt
+        W = self.W_tgt
+        Wout = self.Wout_tgt
         
     batch_size, _ = I.shape
 
-    # Compute the forward pass
-    scores = None
-    z1=np.dot(I,Win) # Win * I(t)
-    z2=np.dot(X,W) # W * X(t)
-    H1 = np.tanh(z1+z2) #f (W*X(t)+Win*I(t))
-    X = (1-leak)*X + leak*H1 # leaky integration
-    scores=np.tanh(X)
-    output=np.dot(scores,Wout)
+    output, scores, H1 = self.predict(I)
     
     # Backward pass
     grads = {}
     
     # 1. Gradient of output w.r.t Wout
-    dWout = np.dot(scores.T, action_grads)
+    dL_dWout = scores.T @ dQ_da
     
     # 2. Gradient through tanh(X_new)
-    dscores = np.dot(action_grads, Wout.T)
-    dX_new = dscores * (1 - scores**2)  # tanh derivative: 1 - tanh²(x)
-    
+    dL_dscores = dQ_da @ Wout.T
+    dL_dX = dL_dscores * (1 - scores**2)  # tanh derivative: 1 - tanh²(x)
+
     # 3. Gradient through leaky integration
-    dH1 = leak * dX_new
-    dX_prev = (1-leak) * dX_new
-    
-    # 4. Gradient through tanh(z1+z2)
-    dz = dH1 * (1 - H1**2)  # tanh derivative
+    dH1_dz = (1 - H1**2)
+    dL_dz = dL_dX * self.leak * dH1_dz
     
     # 5. Gradient w.r.t Win and W
-    dWin = np.dot(I.T, dz)
-    dW = np.dot(X.T, dz)
+    dL_dWin = I.T @ dL_dz
+    dL_dW = self.X_1.T @ dL_dz
     
-    grads['Win'] = dWin
-    grads['W'] = dW
-    grads['Wout'] = dWout
+    grads = (dL_dWin, dL_dW, dL_dWout)
     
     return grads
 
-  def train(self, I, action_grads, action_bound):
+  def train(self, I, dQda, action_bound):
     """
     Train this neural network using adam optimizer.
     Inputs:
@@ -127,18 +118,18 @@ class ActorNet(object):
     """
  
     # Compute out and gradients using the current minibatch
-    grads = self.evaluate_gradient(X, action_grads, \
-                                      action_bound)
+    grads = self.evaluate_gradient(I, dQda, action_bound)
+
     # Update the weights using adam optimizer
     
-    self.params['Wout'] = self._adam(self.params['Wout'], grads['Wout'], config=self.optm_cfg['Wout'])[0]
-    self.params['W'] = self._adam(self.params['W'], grads['W'], config=self.optm_cfg['W'])[0]
-    self.params['Win'] = self._adam(self.params['Win'], grads['Win'], config=self.optm_cfg['Win'])[0]
+    self.Wout = self._adam(self.Wout, grads[2], config=self.optm_cfg_Wout)[0]
+    self.W = self._adam(self.W, grads[1], config=self.optm_cfg_W)[0]
+    self.Win = self._adam(self.Win, grads[0], config=self.optm_cfg_Win)[0]
     
     # Update the configuration parameters to be used in the next iteration
-    self.optm_cfg['Wout'] = self._adam(self.params['Wout'], grads['Wout'], config=self.optm_cfg['Wout'])[1]
-    self.optm_cfg['W'] = self._adam(self.params['W'], grads['W'], config=self.optm_cfg['W'])[1]
-    self.optm_cfg['Win'] = self._adam(self.params['Win'], grads['Win'], config=self.optm_cfg['Win'])[1]
+    self.optm_cfg_Wout = self._adam(self.Wout, grads[2], config=self.optm_cfg_Wout)[1]
+    self.optm_cfg_W = self._adam(self.W, grads[1], config=self.optm_cfg_W)[1]
+    self.optm_cfg_Win = self._adam(self.Win, grads[0], config=self.optm_cfg_Win)[1]
   
   def train_target(self, tau):
     """
@@ -149,7 +140,7 @@ class ActorNet(object):
     self.params['W_tgt'] = tau*self.params['W']+(1-tau)*self.params['W_tgt']
     self.params['Win_tgt'] = tau*self.params['Win']+(1-tau)*self.params['Win_tgt']
 
-  def predict(self, I, X, leak, action_bound, target=False):
+  def predict(self, I, target=False):
     """
     Use the trained weights of this network to predict the action vector for a 
     given state.
@@ -167,24 +158,25 @@ class ActorNet(object):
     y_pred = None
     
     if not target:
-        Win = self.params['Win']
-        W = self.params['W']
-        Wout= self.params['Wout']
+        Win = self.Win
+        W = self.W
+        Wout= self.Wout
     else:
-        Win = self.params['Win_tgt']
-        W = self.params['W_tgt']
-        Wout = self.params['Wout_tgt']
+        Win = self.Win_tgt
+        W = self.W_tgt
+        Wout = self.Wout_tgt
 
     scores = None
     z1=np.dot(I,Win) # Win * I(t)
-    z2=np.dot(X,W) # W * X(t)
+    z2=np.dot(self.X,W) # W * X(t)
     H1 = np.tanh(z1+z2) #f (W*X(t)+Win*I(t))
-    X = (1-leak)*X + leak*H1 # leaky integration
-    scores=np.tanh(X)
+    self.X_1 = self.X # store previous state
+    self.X = (1-self.leak)*self.X + self.leak*H1 # leaky integration
+    scores=np.tanh(self.X)
     output=np.dot(scores,Wout)
-    y_pred=np.clip(output, -action_bound, action_bound)
+    #y_pred=np.clip(output, -action_bound, action_bound)
 
-    return y_pred
+    return output, scores, H1
 
   def _adam(self, x, dx, config=None):
       """

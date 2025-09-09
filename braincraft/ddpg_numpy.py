@@ -83,6 +83,7 @@ def train():
                 actions = np.asarray([e[1] for e in batch])
                 rewards = np.asarray([e[2] for e in batch])
                 states_t_1 = np.asarray([e[3] for e in batch])
+                actions_t_1 = None # adapt replay buffer so that action in next state is returned as well
                 dones = np.asarray([e[4] for e in batch])
                 # Setup y_is for updating critic
                 y=np.zeros((len(batch), action_dim))
@@ -95,10 +96,10 @@ def train():
                     else:
                         y[i] = rewards[i] + GAMMA*Q_tgt[i]    
                 # Update critic by minimizing the loss
-                loss += critic.train(states_t, actions, y)
+                loss += (critic.train(states_t, actions, rewards, states_t_1, actions_t_1, y))/len(batch)
                 # Update actor using sampled policy gradient
                 a_for_dQ_da=actor.predict(states_t, ACTION_BOUND, target=False)
-                dQ_da = critic.evaluate_action_gradient(states_t,a_for_dQ_da)
+                dQ_da = critic.evaluate_action_gradient(states_t,a_for_dQ_da, loss)
                 actor.train(states_t, dQ_da, ACTION_BOUND)
                 
                 # Update target networks
