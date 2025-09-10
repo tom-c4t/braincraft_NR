@@ -14,9 +14,9 @@ MAX_EPISODES = 40
 # Max episode length
 MAX_EP_STEPS = 1000
 # Base learning rate for the Actor network
-ACTOR_LEARNING_RATE = 0.0001
+ACTOR_LEARNING_RATE = 0.001
 # Base learning rate for the Critic Network
-CRITIC_LEARNING_RATE = 0.001
+CRITIC_LEARNING_RATE = 0.003
 # Discount factor 
 GAMMA = 0.99
 # Soft target update param
@@ -58,7 +58,8 @@ def ddpg_player():
             # add noise in the form of 1./(1.+i+j), decaying over episodes and
             # steps, otherwise a_t will be the same, since s is fixed per episode.
             
-            a_t, _, _ = actor.predict(s_t, target=False)
+            index = counter % MINIBATCH_SIZE
+            a_t = actor.predict(s_t, index, target=False)
             # print(f"Raw action: {a_t}")
             a_t += 1./(1.+i+counter)
             a_t = np.clip(a_t, -action_bound, action_bound)
@@ -74,13 +75,15 @@ def ddpg_player():
             if energy <= 0:
                 done = True
 
-            a = np.float64(a_t[0])
+            a = a_t[0][0]  # a_t is a 2d Array ergo we have to access it via 2 indices, maybe
+            assert isinstance(a, np.float64), "Programming Error: Something went wrong while acceessing a_t"
             # print(f"Action: {a}")
             # Store transition in replay buffer
             buff.add(s_t, a, r_t, s_t_1, done)
-            
+            #from IPython import embed; embed()
             # If the no. of experiences (episodes) is larger than the mini batch size
             if buff.count() > MINIBATCH_SIZE:
+                print(f"")
                 # Sample a random batch 
                 batch = buff.getBatch(MINIBATCH_SIZE)
                 states_t = np.asarray([e[0] for e in batch])
@@ -92,7 +95,8 @@ def ddpg_player():
                 dones = np.asarray([e[4] for e in batch])
                 # Setup y_is for updating critic
                 y=np.zeros((len(batch), action_dim))
-                a_tgt, _, _=actor.predict(states_t_1, target=True)
+
+                a_tgt =actor.predict(states_t_1, index, target=True)
                 Q_tgt = critic.predict(states_t_1, a_tgt, target=True)
                 
                 for i in range(len(batch)):
@@ -103,25 +107,27 @@ def ddpg_player():
                 # Update critic by minimizing the loss
                 critic.train(states_t, actions, rewards, y)
                 # Update actor using sampled policy gradient
-                a_for_dQ_da, _, _=actor.predict(states_t, target=False)
+                a_for_dQ_da =actor.predict(states_t, index, target=False)
                 dQ_da = critic.evaluate_action_gradient(states_t,a_for_dQ_da)
-                actor.train(states_t, dQ_da, ACTION_BOUND)
+                actor.train(states_t, dQ_da, ACTION_BOUND, index)
                 
                 # Update target networks
                 actor.train_target(TAU)
                 critic.train_target(TAU)
                 
             counter += 1
-            model = (actor.Win.T, actor.W.T, actor.Wout.T, 0, actor.leak, np.tanh, np.tanh)
+            model = (actor.Win.T, actor.W.T, actor.Wout.T, 0, actor.leak, actor.relu, actor.relu)
             print(f"Win: {actor.Win.T}")
             #print(f"W: {actor.W.T}")
             #print(f"W: {actor.Wout.T}")
+
+            # return current model
             yield model
-                
-            s_t = s_t_1  
+
+            s_t = s_t_1
             
             if done:
-                "Done!"
+                print("Done!")
                 break
         print("TOTAL REWARD @ " + str(counter) +"-th Episode:")
         print("")

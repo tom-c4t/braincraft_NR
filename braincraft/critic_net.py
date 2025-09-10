@@ -224,3 +224,7 @@ class CriticNet(object):
   def _uniform_init(self, input_size, output_size):
       u = np.sqrt(6./(input_size+output_size))
       return np.random.uniform(-u, u, (input_size, output_size))
+  
+  def he_init (self, input_size, output_size):
+      stddev = np.sqrt(2.0/output_size)
+      return np.random.normal(0, stddev, (input_size, output_size))

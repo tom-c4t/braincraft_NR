@@ -38,13 +38,13 @@ class ActorNet(object):
       of A dimension.
     """
     
-    self.Win = self._uniform_init(input_size, hidden_size)
-    self.W = self._uniform_init(hidden_size, hidden_size)
-    self.Wout = np.random.uniform(-3e-3, 3e-3, (hidden_size, output_size)) 
+    self.Win = self.he_init(input_size, hidden_size)
+    self.W = self.he_init(hidden_size, hidden_size)
+    self.Wout = self.he_init(hidden_size, output_size)
     
-    self.Win_tgt = self._uniform_init(input_size, hidden_size)
-    self.W_tgt = self._uniform_init(hidden_size, hidden_size)
-    self.Wout_tgt = np.random.uniform(-3e-3, 3e-3, (hidden_size, output_size))
+    self.Win_tgt = self.he_init(input_size, hidden_size)
+    self.W_tgt = self.he_init(hidden_size, hidden_size)
+    self.Wout_tgt = self.he_init(hidden_size, output_size)
     
     self.optm_cfg_Win = None
     self.optm_cfg_W = None
@@ -52,11 +52,13 @@ class ActorNet(object):
 
     # additional params:
     self.leak = 0.2  # leaking rate for leaky integration
-    self.X_1 = np.zeros(hidden_size) # store previous hidden state
-    self.X = np.zeros(hidden_size)   # state of hidden neurons
-    self.X_tgt = np.zeros(hidden_size)   # state of hidden neurons in target actor
-    
-  def evaluate_gradient(self, I, dQ_da, action_bound, target=False):
+    self.X1 = np.zeros((64, hidden_size)) # store previous hidden state
+    self.X2 = np.zeros((64,hidden_size))   # state of hidden neurons
+    self.X1_tgt = np.zeros((64,hidden_size))   # state of hidden neurons in target actor
+    self.X2_tgt = np.zeros((64,hidden_size))   # state of hidden neurons in target actor
+    self.output = np.zeros(output_size) # store the output action
+
+  def evaluate_gradient(self, I, dQ_da, action_bound, index, target=False):
     """
     Compute the action and gradients for the network based on the input I
     
@@ -79,38 +81,36 @@ class ActorNet(object):
         Win = self.Win
         W = self.W
         Wout= self.Wout
+        X1 = self.X1
+        X2 = self.X2
     else:
         Win = self.Win_tgt
         W = self.W_tgt
         Wout = self.Wout_tgt
-        
-    batch_size, _ = I.shape
+        X1 = self.X1_tgt
+        X2 = self.X2_tgt
 
-    output, scores, H1 = self.predict(I)
+    _ = self.predict(I, index, target)
     
     # Backward pass
     grads = {}
     
-    # 1. Gradient of output w.r.t Wout
-    dL_dWout = scores.T @ dQ_da
-    
-    # 2. Gradient through tanh(X_new)
-    dL_dscores = dQ_da @ Wout.T
-    dL_dX = dL_dscores * (1 - scores**2)  # tanh derivative: 1 - tanh²(x)
+    delta = dQ_da
+    delta_hidden = np.dot(delta, Wout.T) * self.diff_relu(X2)
+    print(f"delta_hidden: {delta_hidden.shape}")
+    print(f"X1: {X1.shape}")
+    dWout = np.mean(delta * X2.T, axis=0)
+    print(f"W: {W.shape}")
+    delta_hidden2 = np.dot(delta_hidden, W.T) * self.diff_relu(X1)
+    dW = delta_hidden * X1.T
 
-    # 3. Gradient through leaky integration
-    dH1_dz = (1 - H1**2)
-    dL_dz = dL_dX * self.leak * dH1_dz
+    dWin = np.dot(I.T, delta_hidden2)
     
-    # 5. Gradient w.r.t Win and W
-    dL_dWin = I.T @ dL_dz
-    dL_dW = self.X_1.T @ dL_dz
-    
-    grads = (dL_dWin, dL_dW, dL_dWout)
+    grads = (dWin, dW, dWout)
     
     return grads
 
-  def train(self, I, dQda, action_bound):
+  def train(self, I, dQda, action_bound, index):
     """
     Train this neural network using adam optimizer.
     Inputs:
@@ -118,7 +118,7 @@ class ActorNet(object):
     """
  
     # Compute out and gradients using the current minibatch
-    grads = self.evaluate_gradient(I, dQda, action_bound)
+    grads = self.evaluate_gradient(I, dQda, action_bound, index)
 
     # Update the weights using adam optimizer
     
@@ -140,7 +140,7 @@ class ActorNet(object):
     self.W_tgt = tau*self.W+(1-tau)*self.W_tgt
     self.Win_tgt = tau*self.Win+(1-tau)*self.Win_tgt
 
-  def predict(self, I, target=False):
+  def predict(self, I, index, target=False):
     """
     Use the trained weights of this network to predict the action vector for a 
     given state.
@@ -155,28 +155,34 @@ class ActorNet(object):
     - y_pred: A numpy array of shape (N,) 
     
     """
-    y_pred = None
     
     if not target:
         Win = self.Win
         W = self.W
         Wout= self.Wout
+        X1 = self.X1
+        X2 = self.X2
     else:
         Win = self.Win_tgt
         W = self.W_tgt
         Wout = self.Wout_tgt
+        X1 = self.X1_tgt
+        X2 = self.X2_tgt
 
-    scores = None
-    z1=np.dot(I,Win) # Win * I(t)
-    z2=np.dot(self.X,W) # W * X(t)
-    H1 = np.tanh(z1+z2) #f (W*X(t)+Win*I(t))
-    self.X_1 = self.X # store previous state
-    self.X = (1-self.leak)*self.X + self.leak*H1 # leaky integration
-    scores=np.tanh(self.X)
-    output=np.dot(scores,Wout)
-    #y_pred=np.clip(output, -action_bound, action_bound)
+    print(f"index: {index}")
+    X1_help=np.dot(I,Win) # Win * I(t)
+    # print(f"kp was das is {len(Win)}, {len(W)}")
+    relu1 = self.relu(X1_help)
+    X1[index] = relu1[0] # activation function
+    X2_help=np.dot(X1,W) # W * X1(t)
+    relu2 = self.relu(X2_help)
+    # print(f"X2_len: {len(X2[index])}, x: {len(x[0])}")
+    # TODO: get the right index for x[something], zero works now but is shit
+    #  and the training will not train duh
+    X2[index] = relu2[0] # activation function
+    self.output = np.dot(X2,Wout) # Wout * X2(t)
 
-    return output, scores, H1
+    return self.output
 
   def _adam(self, x, dx, config=None):
       """
@@ -215,3 +221,13 @@ class ActorNet(object):
   def _uniform_init(self, input_size, output_size):
       u = np.sqrt(6./(input_size+output_size))
       return np.random.uniform(-u, u, (input_size, output_size))
+  
+  def he_init (self, input_size, output_size):
+      stddev = np.sqrt(2.0/output_size)
+      return np.random.normal(0, stddev, (input_size, output_size))
+  
+  def relu(self, x):
+     return np.where(x > 0, x, 0.002 * x)
+  
+  def diff_relu(self, x):
+    return np.where(x > 0, 1, 0.002)
