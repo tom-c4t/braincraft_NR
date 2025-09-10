@@ -44,10 +44,10 @@ class CriticNet(object):
     """
     self.W1 = self._uniform_init(input_size + 1, hidden_size)
     self.W2 = self._uniform_init(hidden_size, output_size)
-    self.X = None       # state of hidden neurons in critic 
+    self.X = np.zeros(hidden_size)       # state of hidden neurons in critic 
     self.W1_tgt = self._uniform_init(input_size + 1, hidden_size)
     self.W2_tgt = self._uniform_init(hidden_size, output_size)
-    self.X_tgt = None   # state of hidden neurons in target critic
+    self.X_tgt = np.zeros(hidden_size)   # state of hidden neurons in target critic
     
     self.optm_cfg_W1 = None
     self.optm_cfg_W2 = None
@@ -55,6 +55,7 @@ class CriticNet(object):
     # additional params:
     self.gamma = 0.9  # discount factor for Q-learning
     self.lr = 0.003  # learning rate for the critic network
+    self.z = np.zeros(hidden_size) # store pre-activation value for hidden neurons
 
 
   def evaluate_gradient(self, I, action, rewards, Y_tgt):
@@ -75,16 +76,19 @@ class CriticNet(object):
     critic_Qs = self.predict(I, action)
 
     td_error = (Y_tgt - critic_Qs)  # shape: (batch_size, output_size)
+    loss = np.mean(td_error**2, axis=0)
 
-    batch_size = I.shape[0]
     # Compute the gradients
-
-    h = np.tanh(np.concatenate([I, action], axis=1) @ self.W1)
-    dQ_dW2 = h.T @ td_error / batch_size
-
-    dh = td_error @ self.W2.T * (1 - h**2)  # shape: (batch_size, hidden_size)
     x = np.concatenate([I, action], axis=1)
-    dQ_dW1 = x.T @ dh / batch_size
+    N = I.shape[0]
+
+    dL_dq = -2 * td_error / N  # shape: (batch_size, output_size)
+
+    dQ_dW2 = self.X.T @ dL_dq  # shape: (hidden_size, output_size)
+    dX = dL_dq @ self.W2.T  # shape: (batch_size, hidden_size)
+    dz = dX * (1 - np.tanh(self.z)**2)
+
+    dQ_dW1 = x.T @ dz  # shape: (input_size + 1, hidden_size)
 
     grads = (dQ_dW1, dQ_dW2)
 
@@ -92,7 +96,7 @@ class CriticNet(object):
   
 
   # gradient of the Q value for a action with the weights from the critic 
-  def evaluate_action_gradient(self, I, action, loss, use_target=False):
+  def evaluate_action_gradient(self, I, action, use_target=False):
     """
     Inputs:
     - I: Input for state, shape (N, S), N is the batch size
@@ -112,16 +116,15 @@ class CriticNet(object):
         W2 = self.W2_tgt
     
     critic_Qs = self.predict(I, action)
-
-    td_error = (loss - critic_Qs)  # shape: (batch_size, output_size)
-
     # Compute the gradients
+    dQdh = self.W2
+    dh_dz = 1 - np.tanh(self.z)**2
+    dQ_dz = dQdh.T * dh_dz
 
-    h = np.tanh(np.concatenate([I, action], axis=1) @ self.W1)
+    dQ_di = dQ_dz @ self.W1.T
+    dQ_da = dQ_di[:, -1]
 
-    dQ_da = (td_error @ self.W2.T * (1- h**2)) @ self.W1[-1]
     dQ_da = np.expand_dims(dQ_da, axis=1)
-                    
     return dQ_da
     
     
@@ -134,8 +137,6 @@ class CriticNet(object):
     """
     # Compute forward pass and gradients using the current minibatch
     critic_Qs, grads_critic = self.evaluate_gradient(I, action, reward, Y_tgt)
-    # calculate the loss update which is then summed up in ddpg_numpy.py
-    critic_loss_update = (Y_tgt - critic_Qs)**2
     # Update the weights using adam optimizer
     #print ('grads W4', grads['W4'])
     self.W2 = self._adam(self.W2, grads_critic[1], config=self.optm_cfg_W2)[0]
@@ -145,7 +146,6 @@ class CriticNet(object):
     self.optm_cfg_W2 = self._adam(self.W2, grads_critic[1], config=self.optm_cfg_W2)[1]
     self.optm_cfg_W1 = self._adam(self.W1, grads_critic[0], config=self.optm_cfg_W1)[1]
 
-    return critic_loss_update
     
     
  
@@ -180,8 +180,9 @@ class CriticNet(object):
         W2 = self.W2_tgt
 
     x = np.concatenate([I, action], axis=1)
-    h = np.tanh(x @  W1)
-    q_value = h @ W2
+    self.z = x @  W1
+    self.X = np.tanh(x @  W1)
+    q_value = self.X @ W2
     return q_value
 
 

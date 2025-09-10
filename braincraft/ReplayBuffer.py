@@ -55,37 +55,3 @@ class ReplayBuffer(object):
         self.num_experiences = 0
         
         
-        
-if __name__ == '__main__':
-    
-    env = gym.make(ENV_NAME)
-    # Initialize replay memory
-    replay_buffer = ReplayBuffer(BUFFER_SIZE)
-    
-    for i in range(5):
-        s = env.reset()
-        ep_reward = 0
-        ep_ave_max_q = 0
-
-        for j in range(100):
-
-            if RENDER_ENV: 
-                env.render()
-            a = env.action_space.sample()
-            s2, r, terminal, info = env.step(a)
-           # replay_buffer.add(np.reshape(s, (actor.s_dim,)), np.reshape(a, (actor.a_dim,)), r, \
-          #      terminal, np.reshape(s2, (actor.s_dim,)))
-            replay_buffer.add(s, a, r, s2, terminal)
-     
-    batch = replay_buffer.getBatch(5)     
-    print(replay_buffer.count())
-    print(type(batch))
-    print(len(batch))
-    print(batch)       
-
-    states = np.asarray([e[0] for e in batch])
-    actions = np.asarray([e[1] for e in batch])
-    rewards = np.asarray([e[2] for e in batch])
-    new_states = np.asarray([e[3] for e in batch])
-    dones = np.asarray([e[4] for e in batch])
-    y_t = np.asarray([e[1] for e in batch])

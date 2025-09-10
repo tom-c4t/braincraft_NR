@@ -41,7 +41,6 @@ critic = critic_net.CriticNet(state_dim, HIDDEN1_UNITS, action_dim)
 # Initialize replay buffer
 
 buff = ReplayBuffer(BUFFER_SIZE)      
-reward_result=[]
 
 def ddpg_player():
     env = Environment()
@@ -50,10 +49,8 @@ def ddpg_player():
         s_t = np.zeros((state_dim,))
         s_t_1 = np.zeros((state_dim,))
         done = False
-        total_reward = 0.
         counter = 0
         while bot.energy > 0:
-            loss=0
 
             s_t[0:n] = bot.camera.depths
             s_t[n:n+3] = bot.hit, bot.energy, 1.0
@@ -78,7 +75,7 @@ def ddpg_player():
                 done = True
 
             a = np.float64(a_t[0])
-            print(f"Action: {a}")
+            # print(f"Action: {a}")
             # Store transition in replay buffer
             buff.add(s_t, a, r_t, s_t_1, done)
             
@@ -104,10 +101,10 @@ def ddpg_player():
                     else:
                         y[i] = rewards[i] + GAMMA*Q_tgt[i]    
                 # Update critic by minimizing the loss
-                loss += (critic.train(states_t, actions, rewards, y))/len(batch)
+                critic.train(states_t, actions, rewards, y)
                 # Update actor using sampled policy gradient
                 a_for_dQ_da, _, _=actor.predict(states_t, target=False)
-                dQ_da = critic.evaluate_action_gradient(states_t,a_for_dQ_da, loss)
+                dQ_da = critic.evaluate_action_gradient(states_t,a_for_dQ_da)
                 actor.train(states_t, dQ_da, ACTION_BOUND)
                 
                 # Update target networks
@@ -116,16 +113,17 @@ def ddpg_player():
                 
             counter += 1
             model = (actor.Win.T, actor.W.T, actor.Wout.T, 0, actor.leak, np.tanh, np.tanh)
+            print(f"Win: {actor.Win.T}")
+            #print(f"W: {actor.W.T}")
+            #print(f"W: {actor.Wout.T}")
             yield model
                 
-            s_t = s_t_1
-            total_reward += r_t    
+            s_t = s_t_1  
             
             if done:
                 "Done!"
                 break
-        reward_result.append(total_reward)
-        print("TOTAL REWARD @ " + str(i) +"-th Episode:" + str(total_reward))
+        print("TOTAL REWARD @ " + str(counter) +"-th Episode:")
         print("")
                 
     
