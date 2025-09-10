@@ -105,12 +105,12 @@ class CriticNet(object):
     """
     # Unpack variables from the params dictionary
     if not use_target:
-        W1 = self.params['W1']
-        W2 = self.params['W2']
+        W1 = self.W1
+        W2 = self.W2
     else:
-        W1 = self.params['W1_tgt']
-        W2 = self.params['W2_tgt']
-        
+        W1 = self.W1_tgt
+        W2 = self.W2_tgt
+    
     critic_Qs = self.predict(I, action)
 
     td_error = (loss - critic_Qs)  # shape: (batch_size, output_size)
@@ -120,19 +120,20 @@ class CriticNet(object):
     h = np.tanh(np.concatenate([I, action], axis=1) @ self.W1)
 
     dQ_da = (td_error @ self.W2.T * (1- h**2)) @ self.W1[-1]
+    dQ_da = np.expand_dims(dQ_da, axis=1)
                     
     return dQ_da
     
     
   # train critic network so that estimated Q values are close to true Q values
-  def train(self, I, action, reward, I_t1, Y_tgt):
+  def train(self, I, action, reward, Y_tgt):
     """
     Train this neural network using adam optimizer.
     Inputs:
     - I: A numpy array of shape (N, D) giving training data.
     """
     # Compute forward pass and gradients using the current minibatch
-    critic_Qs, grads_critic = self.evaluate_gradient(I, action, reward, I_t1, Y_tgt)
+    critic_Qs, grads_critic = self.evaluate_gradient(I, action, reward, Y_tgt)
     # calculate the loss update which is then summed up in ddpg_numpy.py
     critic_loss_update = (Y_tgt - critic_Qs)**2
     # Update the weights using adam optimizer

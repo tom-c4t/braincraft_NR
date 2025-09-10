@@ -52,9 +52,9 @@ class ActorNet(object):
 
     # additional params:
     self.leak = 0.2  # leaking rate for leaky integration
-    self.X_1 = None # store previous hidden state
-    self.X = None   # state of hidden neurons
-    self.X_tgt = None   # state of hidden neurons in target actor
+    self.X_1 = np.zeros(hidden_size) # store previous hidden state
+    self.X = np.zeros(hidden_size)   # state of hidden neurons
+    self.X_tgt = np.zeros(hidden_size)   # state of hidden neurons in target actor
     
   def evaluate_gradient(self, I, dQ_da, action_bound, target=False):
     """
