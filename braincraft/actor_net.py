@@ -37,6 +37,7 @@ class ActorNet(object):
     - output_size: The continuous variables that constitutes an action vector
       of A dimension.
     """
+    print("Actor init called")
     
     self.Win = self.he_init(input_size, hidden_size)
     self.W = self.he_init(hidden_size, hidden_size)
@@ -58,7 +59,7 @@ class ActorNet(object):
     self.X2_tgt = np.zeros((64,hidden_size))   # state of hidden neurons in target actor
     self.output = np.zeros(output_size) # store the output action
 
-  def evaluate_gradient(self, I, dQ_da, action_bound, index, target=False):
+  def evaluate_gradient(self, I, dQ_da, action_bound, index):
     """
     Compute the action and gradients for the network based on the input I
     
@@ -76,37 +77,31 @@ class ActorNet(object):
     - grads: Dictionary mapping parameter names to gradients of those parameters; 
       has the same keys as self.params.
     """
-    # Unpack variables from the params dictionary
-    if not target:
-        Win = self.Win
-        W = self.W
-        Wout= self.Wout
-        X1 = self.X1
-        X2 = self.X2
-    else:
-        Win = self.Win_tgt
-        W = self.W_tgt
-        Wout = self.Wout_tgt
-        X1 = self.X1_tgt
-        X2 = self.X2_tgt
 
-    _ = self.predict(I, index, target)
+    _ = self.predict_with_batch(I, target=False)
     
     # Backward pass
     grads = {}
     
     delta = dQ_da
-    delta_hidden = np.dot(delta, Wout.T) * self.diff_relu(X2)
-    print(f"delta_hidden: {delta_hidden.shape}")
-    print(f"X1: {X1.shape}")
-    dWout = np.mean(delta * X2.T, axis=0)
-    print(f"W: {W.shape}")
-    delta_hidden2 = np.dot(delta_hidden, W.T) * self.diff_relu(X1)
-    dW = delta_hidden * X1.T
+    #print(f"Delta: {delta}")
 
+    #print(f"X2 shape: {X2.shape}")
+    #print(f"Delta shape: {delta.shape}")
+    dWout = self.X2.T @ delta
+    #print(f"dWout shape: {dWout.shape}")
+    delta_hidden = np.dot(delta, self.Wout.T) * self.diff_relu(self.X2)
+    #print(f"delta_hidden: {delta_hidden.shape}")
+    #print(f"X1: {X1.shape}")
+    delta_hidden2 = np.dot(delta_hidden, self.W.T) * self.diff_relu(self.X1)
+    dW = delta_hidden.T @ self.X1
+    #print(f"dW shape: {dW.shape}")
     dWin = np.dot(I.T, delta_hidden2)
-    
+    #print(f"dWin shape: {dWin.shape}")
     grads = (dWin, dW, dWout)
+    #print(f"dWin: {dWin}")
+    #print(f"dW: {dW}")
+    #print(f"dWout: {dWout}")
     
     return grads
 
@@ -140,7 +135,7 @@ class ActorNet(object):
     self.W_tgt = tau*self.W+(1-tau)*self.W_tgt
     self.Win_tgt = tau*self.Win+(1-tau)*self.Win_tgt
 
-  def predict(self, I, index, target=False):
+  def predict_with_batch(self, I, target=False):
     """
     Use the trained weights of this network to predict the action vector for a 
     given state.
@@ -169,21 +164,29 @@ class ActorNet(object):
         X1 = self.X1_tgt
         X2 = self.X2_tgt
 
-    print(f"index: {index}")
-    X1_help=np.dot(I,Win) # Win * I(t)
-    # print(f"kp was das is {len(Win)}, {len(W)}")
+    X1_help= I @ Win # Win * I(t)
     relu1 = self.relu(X1_help)
-    X1[index] = relu1[0] # activation function
-    X2_help=np.dot(X1,W) # W * X1(t)
+    X1 = relu1 # activation function
+    
+    X2_help= X1 @ W # W * X1(t)
     relu2 = self.relu(X2_help)
-    # print(f"X2_len: {len(X2[index])}, x: {len(x[0])}")
-    # TODO: get the right index for x[something], zero works now but is shit
-    #  and the training will not train duh
-    X2[index] = relu2[0] # activation function
-    self.output = np.dot(X2,Wout) # Wout * X2(t)
+    X2 = relu2 # activation function
+    self.output = X2 @ Wout # Wout * X2(t)
 
     return self.output
+  
+  def predict_without_batch(self, I, index, target=False):
 
+    X1_help= I @ self.Win # Win * I(t)
+    relu1 = self.relu(X1_help)
+    self.X1[index] = relu1 # activation function
+    X2_help=self.X1[index] @ self.W # W * X1(t)
+    relu2 = self.relu(X2_help)
+    self.X2[index] = relu2 # activation function
+    self.output = self.X2 @ self.Wout # Wout * X2(t)
+
+    return self.output
+     
   def _adam(self, x, dx, config=None):
       """
       Uses the Adam update rule, which incorporates moving averages of both the

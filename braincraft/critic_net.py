@@ -75,20 +75,18 @@ class CriticNet(object):
     # predict Q value for state-action pair
     critic_Qs = self.predict(I, action)
 
-    td_error = (Y_tgt - critic_Qs)  # shape: (batch_size, output_size)
+    td_error = (Y_tgt - critic_Qs)
+    #print(f"TD error: {td_error}")
     loss = np.mean(td_error**2, axis=0)
+    #print(f"Critic loss: {loss}")
 
-    # Compute the gradients
     x = np.concatenate([I, action], axis=1)
-    N = I.shape[0]
 
-    dL_dq = -2 * td_error / N  # shape: (batch_size, output_size)
+    #print(f"X shape: {self.X.shape} TD error shape: {td_error.shape}")
+    dQ_dW2 = self.X.T @ td_error 
+    delta_hidden = td_error @ self.W2.T * self.diff_relu(self.X)
+    dQ_dW1 = x.T @ delta_hidden
 
-    dQ_dW2 = self.X.T @ dL_dq  # shape: (hidden_size, output_size)
-    dX = dL_dq @ self.W2.T  # shape: (batch_size, hidden_size)
-    dz = dX * (1 - np.tanh(self.z)**2)
-
-    dQ_dW1 = x.T @ dz  # shape: (input_size + 1, hidden_size)
 
     grads = (dQ_dW1, dQ_dW2)
 
@@ -120,8 +118,9 @@ class CriticNet(object):
     dQdh = self.W2
     dh_dz = 1 - np.tanh(self.z)**2
     dQ_dz = dQdh.T * dh_dz
-
+    print(f"dQ_dz shape: {dQ_dz.shape}")
     dQ_di = dQ_dz @ self.W1.T
+    print(f"dQ_di shape: {dQ_di.shape}")
     dQ_da = dQ_di[:, -1]
 
     dQ_da = np.expand_dims(dQ_da, axis=1)
@@ -181,7 +180,7 @@ class CriticNet(object):
 
     x = np.concatenate([I, action], axis=1)
     self.z = x @  W1
-    self.X = np.tanh(x @  W1)
+    self.X = self.relu(self.z)
     q_value = self.X @ W2
     return q_value
 
@@ -228,3 +227,10 @@ class CriticNet(object):
   def he_init (self, input_size, output_size):
       stddev = np.sqrt(2.0/output_size)
       return np.random.normal(0, stddev, (input_size, output_size))
+  
+  def relu(self, x):
+     return np.where(x > 0, x, 0.002 * x)
+  
+  def diff_relu(self, x):
+    return np.where(x > 0, 1, 0.002)
+     
