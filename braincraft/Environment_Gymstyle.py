@@ -39,13 +39,12 @@ class BotEnv(gym.Env):
   def reset(self, seed: Optional[int] = None, options: Optional[dict]=None):
     super().reset(seed=seed)
     self.bot.position = (0.5, 0.5)
-    self.bot.direction = np.radians(90) + np.radians(np.random.uniform(-5, +5))
+    self.bot.direction = np.radians(90)
+    self.bot.energy = 1000
 
     observation = self._get_obs()
     info = {"Environment reset": 1}
 
-    print(f"Observation: {observation}")
-    print(f"Self obs shape: {self.observation_space.shape}")
     return observation, info
   
   def render(self, mode='human'):
