@@ -1,28 +1,28 @@
-import gym
+import gymnasium as gym
+from gymnasium.utils.env_checker import check_env
 import numpy as np
-i
+import Environment_Gymstyle as Env
 
-from stable_baselines.ddpg.policies import MlpPolicy
-from stable_baselines.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise, AdaptiveParamNoiseSpec
-from stable_baselines import DDPG
+from stable_baselines3 import DDPG
+from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
 
-env = gym.make('MountainCarContinuous-v0')
+def training_function():
 
-# the noise objects for DDPG
-n_actions = env.action_space.shape[-1]
-param_noise = None
-action_noise = OrnsteinUhlenbeckActionNoise(mean=np.zeros(n_actions), sigma=float(0.5) * np.ones(n_actions))
+    gym.register(
+        id="BotEnv",
+        entry_point=Env.BotEnv,
+        max_episode_steps=100000
+    )
 
-model = DDPG(MlpPolicy, env, verbose=1, param_noise=param_noise, action_noise=action_noise)
-model.learn(total_timesteps=400000)
-model.save("ddpg_mountain")
+    env = gym.make("BotEnv")
 
-del model # remove to demonstrate saving and loading
+    try:
+        check_env(env.unwrapped)
+        print("Environment passes all checks!")
+    except Exception as e:
+        print(f"Environment has issues: {e}")
 
-model = DDPG.load("ddpg_mountain")
 
-obs = env.reset()
-while True:
-    action, _states = model.predict(obs)
-    obs, rewards, dones, info = env.step(action)
-    env.render()
+# -----------------------------------------------------------------------------
+if __name__ == "__main__":
+    training_function()
