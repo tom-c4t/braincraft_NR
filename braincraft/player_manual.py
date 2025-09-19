@@ -25,7 +25,8 @@ def update(frame=0):
     
     position = bot.position
     energy = bot.energy
-    bot.forward(0, environment)
+    _, _, distance_sensors, _ = bot.forward(0, environment)
+    print(f"Distance: {distance_sensors.max()}")
     move = True
     distance += np.linalg.norm(position - bot.position)
     bot.camera.render(bot.position, bot.direction,

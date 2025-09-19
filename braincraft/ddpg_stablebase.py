@@ -5,7 +5,7 @@ import Environment_Gymstyle as Env
 from bot import Bot
 from environment_1 import Environment
 
-from stable_baselines3 import DDPG
+from stable_baselines3 import TD3
 from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
 
 def training_function(timesteps=10):
@@ -21,7 +21,7 @@ def training_function(timesteps=10):
     n_actions = env.action_space.shape[-1]
     action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
 
-    model = DDPG("MlpPolicy", env, action_noise=action_noise, verbose=1)
+    model = TD3("MlpPolicy", env, action_noise=action_noise, verbose=1)
     print(f"Timesteps: {timesteps}")
     model.learn(total_timesteps=timesteps, log_interval=10)
     model.save("ddpg_bot")
@@ -133,7 +133,7 @@ def evaluate_self(model, Bot, Environment, runs=10, seed=None, debug=False):
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     training_function(timesteps=1000)
-    model = DDPG.load("ddpg_bot")
+    model = TD3.load("ddpg_bot")
     seed = 42
-    score, std_dev = evaluate_self(model, Bot, Environment,runs=5,debug=False)
+    score, std_dev = evaluate_self(model, Bot, Environment,runs=5,debug=True)
     print(f"score: {score} +- {std_dev}")
