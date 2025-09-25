@@ -4,6 +4,10 @@ import numpy as np
 from bot import Bot
 from typing import Optional
 from environment_1 import Environment
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+from matplotlib.animation import FuncAnimation
+from matplotlib.collections import LineCollection
 
 class BotEnv(gym.Env):
   """Custom Environment that follows gym interface"""
@@ -19,13 +23,16 @@ class BotEnv(gym.Env):
     self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(67,), dtype=np.float32)
     self.bot = Bot()
     self.reward = 0
+    self.fig = plt.figure(figsize=(10,5))
+    self.env = Environment()
+    self.steer = False
+    self.sum_actions = 0.0
 
   def step(self, action):
 
-    environment = Environment()
     action = action * 5
     pre_position = self.bot.position
-    energy, hit, distances, values = self.bot.forward(action, environment)
+    energy, hit, distances, values = self.bot.forward(action, self.env)
     post_position = self.bot.position
     observation = self._get_obs()
     self.reward = self._get_reward(self.reward, distances, pre_position, post_position, hit, action)
@@ -38,6 +45,54 @@ class BotEnv(gym.Env):
 
     truncated = False
     info = {"Step done": 1}
+
+    """
+    # rendering
+    world = self.env.world
+    world_rgb = self.env.world_rgb
+    
+    ax1 = plt.axes([0.0,0.0,1/2,1.0], aspect=1, frameon=False)
+    ax1.set_xlim(0,1), ax1.set_ylim(0,1), ax1.set_axis_off()
+    ax2 = plt.axes([1/2,0.0,1/2,1.0], aspect=1, frameon=False)
+    ax2.set_xlim(0,1), ax2.set_ylim(0,1), ax2.set_axis_off()
+
+    graphics = {
+            "topview" : ax1.imshow(self.env.world_rgb, interpolation="nearest", origin="lower",
+                                   extent = [0.0, world.shape[1]/max(world.shape),
+                                             0.0, world.shape[0]/max(world.shape)]),
+            "bot" : ax1.add_artist(Circle((0,0), 0.05,
+                                          zorder=50, facecolor="white", edgecolor="black")),
+            "rays" : ax1.add_collection(LineCollection([], color="C1", linewidth=0.5, zorder=30)),
+            "hits" :  ax1.scatter([], [], s=1, linewidth=0, color="black", zorder=40),
+            "camera" : ax2.imshow(np.zeros((1,1,3)), interpolation="nearest",
+                                  origin="lower", extent = [0.0, 1.0, 0.0, 1.0]),
+            "energy" : ax2.add_collection(
+                LineCollection([[(0.1, 0.1),(0.9, 0.1)],
+                                [(0.1, 0.1),(0.9, 0.1)],
+                                [(0.1, 0.1),(0.9, 0.1)]],
+                               color=("black", "white", "C1"), linewidth=(20,18,12),
+                               capstyle="round", zorder=150)) }
+
+    self.bot.camera.render(self.bot.position, self.bot.direction,self.env.world, self.env.colormap)
+    graphics["rays"].set_segments(self.bot.camera.rays)
+    graphics["hits"].set_offsets(self.bot.camera.rays[:,1,:])
+    graphics["bot"].set_center(self.bot.position)
+    if energy < self.bot.energy:
+        graphics["energy"].set_color( ("black", "white", "C2") )
+    else:
+        graphics["energy"].set_color( ("black", "white", "C1") )        
+
+    if self.bot.energy > 0:
+        ratio = self.bot.energy/self.bot.energy_max
+        graphics["energy"].set_segments([[(0.1, 0.1),(0.9, 0.1)],
+                                          [(0.1, 0.1),(0.9, 0.1)],
+                                          [(0.1, 0.1),(0.1 + ratio*0.8, 0.1)]])
+    else:
+        graphics["energy"].set_segments([[(0.1, 0.1),(0.9, 0.1)],
+                                          [(0.1, 0.1),(0.9, 0.1)]])            
+    graphics["camera"].set_data(self.bot.camera.framebuffer)
+    plt.pause(1/60)
+    """
 
     return observation, self.reward, done, truncated, info
   
@@ -67,23 +122,35 @@ class BotEnv(gym.Env):
     return states
   
   def _get_reward(self, reward, distances, pre_position, post_position, hit, action):
-    if hit is False:
-      reward += 1
+    
+    #print(f"Distances: {distances[31]}")
+    if distances[31] < 0.2:
+      self.steer = True
+    if distances[31] > 0.4:
+      self.steer = False
+
+    if hit is True:
+      print( "Hit!" )
+      reward = 0.0
+      self.sum_actions = 0.0
+      reward -= 10.0
+      if np.sign(action) > 0:
+        reward += 10.0
+       
     else:
-      if abs(action) > 3.5:
-        reward = 1
+      if self.steer is True:
+        print("Steering")
+        self.sum_actions += action
+        reward = abs(self.sum_actions)
 
-    # difference between leftmost and rightmost sensor
-    dist_diff = abs(distances[0] - distances[-1])
-    # subtract difference from 1, so that higher values mean better action
-    dist_diff = 1- dist_diff
-    # all sensors should be as free as possible
-    dist_sum = np.sum(distances)
-    no_move_penalty = 0
-    if np.linalg.norm(pre_position - post_position) < 0.006:
-      no_move_penalty = -10
+      else:
+        print("Going straight")
+        self.sum_actions = 0.0
+        # maximize smaller value between leftmost and rightmost sensor
+        max_dist = min(distances[0], distances[-1])
 
-    #reward = dist_sum + dist_diff + no_move_penalty
-    #reward = np.random.randint(-20, 30)
-    # scale with 10 for better resolution
+        reward = max_dist * 100
+
+
+    
     return reward

@@ -16,17 +16,17 @@ def on_press(event):
             bot.direction += np.radians(5)
         elif event.key == 'right':
             bot.direction -= np.radians(5)
-        move = False        
+        move = False  
+    #print(f"Direction: {bot.direction}°")      
 
 def update(frame=0):
     """ Update display, bot and stats. """
         
     global anim, bot, graphics, move, distance, environment
-    
     position = bot.position
     energy = bot.energy
     _, _, distance_sensors, _ = bot.forward(0, environment)
-    print(f"Distance: {distance_sensors.max()}")
+    #print(f"Distance: {distance_sensors}")
     move = True
     distance += np.linalg.norm(position - bot.position)
     bot.camera.render(bot.position, bot.direction,
@@ -51,7 +51,6 @@ def update(frame=0):
         anim.event_source.stop()
 
     graphics["camera"].set_data(bot.camera.framebuffer)
-
     
 if __name__ == "__main__":
     from bot import Bot
@@ -61,6 +60,9 @@ if __name__ == "__main__":
     from matplotlib.patches import Circle
     from matplotlib.animation import FuncAnimation
     from matplotlib.collections import LineCollection
+
+    bot_dir_diff = 0.0
+    reward = 0.0
 
     environment = Environment()
     bot         = Bot()
