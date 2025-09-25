@@ -118,9 +118,7 @@ class CriticNet(object):
     dQdh = self.W2
     dh_dz = 1 - np.tanh(self.z)**2
     dQ_dz = dQdh.T * dh_dz
-    print(f"dQ_dz shape: {dQ_dz.shape}")
     dQ_di = dQ_dz @ self.W1.T
-    print(f"dQ_di shape: {dQ_di.shape}")
     dQ_da = dQ_di[:, -1]
 
     dQ_da = np.expand_dims(dQ_da, axis=1)

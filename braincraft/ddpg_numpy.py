@@ -67,7 +67,7 @@ def ddpg_player():
             # Execute action a_t and observe reward r_t and new state s_{t+1}
             energy, hit, distances, color = bot.forward(a_t[0], env, debug=False)
 
-            r_t = energy-s_t[-2]
+            r_t = get_reward(hit, distances, energy)
             s_t_1[0:n] = distances
             s_t_1[n:n+3] = hit, energy, 1.0
 
@@ -130,6 +130,12 @@ def ddpg_player():
                 break
         print("TOTAL REWARD @ " + str(counter) +"-th Episode:")
         print("")
+
+def get_reward(hit, distances, energy):
+    reward = min(distances) * 100
+    print(reward)
+    return reward
+
                 
     
 
