@@ -57,7 +57,7 @@ def ddpg_player():
 
             s_t[0:n] = bot.camera.depths
             s_t[n:n+3] = bot.hit, bot.energy, 1.0
-            # Select action according to the cuurent policy and exploration noise    
+            # Select action according to the curent policy and exploration noise    
             # add noise in the form of 1./(1.+i+j), decaying over episodes and
             # steps, otherwise a_t will be the same, since s is fixed per episode.
             
@@ -65,7 +65,6 @@ def ddpg_player():
             a_t = actor.predict_without_batch(s_t, index, target=False)
             a_t += 1./(1.+i+counter)
             a_t = np.clip(a_t, -action_bound, action_bound)
-            #print(f"Action shape: {a_t.shape}")
 
             # Execute action a_t and observe reward r_t and new state s_{t+1}
             energy, hit, distances, color = bot.forward(a_t[0], env, debug=False)
@@ -79,10 +78,8 @@ def ddpg_player():
 
             a = a_t[0][0]  # a_t is a 2d Array ergo we have to access it via 2 indices, maybe
             assert isinstance(a, np.float64), "Programming Error: Something went wrong while acceessing a_t"
-            # print(f"Action: {a}")
             # Store transition in replay buffer
             buff.add(s_t, a, r_t, s_t_1, done)
-            #from IPython import embed; embed()
             # If the no. of experiences (episodes) is larger than the mini batch size
             if buff.count() > MINIBATCH_SIZE:
                 print(f"")
@@ -93,7 +90,6 @@ def ddpg_player():
                 actions = np.expand_dims(actions, axis=1)  # make it (batch_size, action_dim)
                 rewards = np.asarray([e[2] for e in batch])
                 states_t_1 = np.asarray([e[3] for e in batch])
-                # actions_t_1 = None # adapt replay buffer so that action in next state is returned as well
                 dones = np.asarray([e[4] for e in batch])
                 # Setup y_is for updating critic
                 y=np.zeros((len(batch), action_dim))
@@ -119,6 +115,7 @@ def ddpg_player():
                 
             counter += 1
             model = (actor.Win.T, actor.W.T, actor.Wout.T, 0, actor.leak, actor.relu, actor.relu)
+            # Debug prints
             #print(f"Win: {actor.Win.T}")
             #print(f"W: {actor.W.T}")
             #print(f"W: {actor.Wout.T}")
@@ -136,6 +133,11 @@ def ddpg_player():
 
 def _get_reward(reward, distances, hit, action, counter, sum_actions):
 
+    # reward function
+    # split in two cases:
+    # Hit - robot has it a wall
+    # No Hit - robot is in free space
+    # closeness to wall --> size of steering angle
 
     if hit is False:
         print("No hit!")
