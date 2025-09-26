@@ -37,7 +37,6 @@ class ActorNet(object):
     - output_size: The continuous variables that constitutes an action vector
       of A dimension.
     """
-    print("Actor init called")
     
     self.Win = self.he_init(input_size, hidden_size)
     self.W = self.he_init(hidden_size, hidden_size)
@@ -65,15 +64,12 @@ class ActorNet(object):
     
     Inputs:
     - I: Input data of shape D. Each X[i] is a training sample.
-    - X: Hidden state of shape H
-    - target: use default weights if False; otherwise use target weights.
-    - action_grads: the gradient output from the critic-network.
+    - dQ_da: Gradient of the Q-value with respect to the action
     - action_bound: the scaling factor for the action, which is environment
                     dependent.
+    - index: index of the current sample in the batch
 
     Returns:
-     A tuple of:
-    - actions: a continuous vector
     - grads: Dictionary mapping parameter names to gradients of those parameters; 
       has the same keys as self.params.
     """
@@ -84,25 +80,13 @@ class ActorNet(object):
     grads = {}
     
     delta = dQ_da
-    #print(f"Delta: {delta}")
-
-    #print(f"X2 shape: {X2.shape}")
-    #print(f"Delta shape: {delta.shape}")
     dWout = self.X2.T @ delta
-    #print(f"dWout shape: {dWout.shape}")
     delta_hidden = np.dot(delta, self.Wout.T) * self.diff_relu(self.X2)
-    #print(f"delta_hidden: {delta_hidden.shape}")
-    #print(f"X1: {X1.shape}")
     delta_hidden2 = np.dot(delta_hidden, self.W.T) * self.diff_relu(self.X1)
     dW = delta_hidden.T @ self.X1
-    #print(f"dW shape: {dW.shape}")
     dWin = np.dot(I.T, delta_hidden2)
-    #print(f"dWin shape: {dWin.shape}")
     grads = (dWin, dW, dWout)
-    #print(f"dWin: {dWin}")
-    #print(f"dW: {dW}")
-    #print(f"dWout: {dWout}")
-    
+
     return grads
 
   def train(self, I, dQda, action_bound, index):
@@ -110,6 +94,10 @@ class ActorNet(object):
     Train this neural network using adam optimizer.
     Inputs:
     - I: A numpy array of shape D giving training data.
+    - dQda: Gradient of the Q-value with respect to the action
+    - action_bound: the scaling factor for the action, which is environment
+                    dependent.
+    - index: index of the current sample in the batch
     """
  
     # Compute out and gradients using the current minibatch
