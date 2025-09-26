@@ -132,7 +132,7 @@ def evaluate_self(model, Bot, Environment, runs=10, seed=None, debug=False):
 
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    training_function(timesteps=2000)
+    training_function(timesteps=1000)
     model = SAC.load("ddpg_bot")
     seed = 42
     score, std_dev = evaluate_self(model, Bot, Environment,runs=5,debug=True)

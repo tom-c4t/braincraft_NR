@@ -47,7 +47,7 @@ class BotEnv(gym.Env):
     info = {"Step done": 1}
 
     """
-    # rendering
+    # rendering of each trainingsstep
     world = self.env.world
     world_rgb = self.env.world_rgb
     
@@ -123,7 +123,13 @@ class BotEnv(gym.Env):
   
   def _get_reward(self, reward, distances, pre_position, post_position, hit, action):
     
-    #print(f"Distances: {distances[31]}")
+    # reward function
+    # split in three cases:
+    # Hit - robot has it a wall
+    # Steer - robot is close to wall an should turn
+    # straight - robot is in corridor and should go straight
+
+    # check if steering is necessary
     if distances[31] < 0.2:
       self.steer = True
     if distances[31] > 0.4:
@@ -131,6 +137,8 @@ class BotEnv(gym.Env):
 
     if hit is True:
       print( "Hit!" )
+      # big penalty for hitting wall
+      # possibility to minimize penalty by turning away from wall
       reward = 0.0
       self.sum_actions = 0.0
       reward -= 10.0
@@ -140,6 +148,7 @@ class BotEnv(gym.Env):
     else:
       if self.steer is True:
         print("Steering")
+        # maximize sum of actions to encourage turning in one direction
         self.sum_actions += action
         reward = abs(self.sum_actions)
 
@@ -148,7 +157,7 @@ class BotEnv(gym.Env):
         self.sum_actions = 0.0
         # maximize smaller value between leftmost and rightmost sensor
         max_dist = min(distances[0], distances[-1])
-
+        # scale reward
         reward = max_dist * 100
 
 
