@@ -92,17 +92,16 @@ def get_actor():
     # Initialize weights between -3e-3 and 3-e3
     last_init = keras.initializers.RandomUniform(minval=-0.03, maxval=0.03)
 
-    # input equation (equation 1)
+    # input layer
     inputs = keras.Input(shape=(seq_len, num_states))
-    # print(f"Input: {inputs}")
     cell = LeakyRNNCell(units = 1000, leak=leak)
     rnn_layer = RNN(cell, return_sequences=True)
     rnn_output = rnn_layer(inputs)
 
-    # Output equation (equation 2)
+    # Output layer (equation 2)
     output_layer = keras.layers.Dense(1, activation="tanh", use_bias=False, kernel_initializer=last_init)
     outputs = output_layer(rnn_output)
-    # Our upper bound is 5.0 (maximum turning angle)
+    # Our upper bound is 5.0 (maximum turning angle), scales output of tanh
     outputs = outputs * upper_bound
     model = keras.Model(inputs, outputs)
     return model
@@ -110,19 +109,16 @@ def get_actor():
 
 # Defining the Critic network
 def get_critic():
-    # input equation (equation 1)
+    # input layer
     critic_inputs = keras.Input(shape=(None, num_states))
     critic_cell = LeakyRNNCell(units = 1000, leak=leak)
     critic_rnn_layer = RNN(critic_cell, return_sequences=True)
     critic_rnn_output = critic_rnn_layer(critic_inputs)
-    #print(f"Critic RNN output shape: {critic_rnn_output.shape}")
 
     critic_actions = keras.Input(shape=(None, num_actions))
     critic_action_out = keras.layers.Dense(1000, use_bias=False, activation="relu")(critic_actions)
-    #print(f"Critic action out shape: {critic_action_out.shape}")
 
-    # Combine state and action pathways
-    #critic_rnn_output = keras.ops.expand_dims(critic_rnn_output,1)
+    # Q-value for state-action pair
     concat = keras.layers.Concatenate()([critic_rnn_output, critic_action_out])
     out = keras.layers.Dense(1000, activation="relu")(concat)
     critic_outputs = keras.layers.Dense(1)(out)
@@ -162,12 +158,8 @@ tau = 0.05
 # Return an action
 def policy(state, noise_object):
     sampled_actions = keras.ops.squeeze(actor_model(state), axis=-1)
-    #print(f"state: {state}")
-    #print(f"Sampled actions (after squeeze): {sampled_actions}")
-    # print(f"Sampled without noise: {sampled_actions}")
     noise = noise_object()
     sampled_actions = sampled_actions.numpy() + noise
-    # print(f"Sampled with noise: {sampled_actions}")
 
     # We make sure action is within bounds
     legal_action = np.clip(sampled_actions, lower_bound, upper_bound)
@@ -208,7 +200,7 @@ class Buffer:
     # Eager execution is turned on by default in TensorFlow 2. Decorating with tf.function allows
     # TensorFlow to build a static graph out of the logic and computations in our function.
     # This provides a large speed up for blocks of code that contain many small TensorFlow operations such as this one.
-    #@tf.function
+    @tf.function
     def update(
         self,
         state_batch,
@@ -217,10 +209,8 @@ class Buffer:
         next_state_batch,
     ):
         # Training and updating Actor & Critic networks.
-        # See Pseudo Code.
         with tf.GradientTape() as tape:
             target_actions = target_actor(next_state_batch, training=True)
-            # print(f"Target actions: {target_actions}")
             y = reward_batch + gamma * target_critic([next_state_batch, target_actions], training=True)
             critic_value = critic_model([state_batch, action_batch], training=True)
             critic_loss = keras.ops.mean(keras.ops.square(y - critic_value))
@@ -233,17 +223,13 @@ class Buffer:
         with tf.GradientTape() as tape:
             actions = actor_model(state_batch, training=True)
             critic_value = critic_model([state_batch, actions], training=True)
-            # Used `-value` as we want to maximize the value given
-            # by the critic for our actions
+            # We want to maximize the Q-value given by the critic for our actions
             actor_loss = -keras.ops.mean(critic_value)
         actor_grad = tape.gradient(actor_loss, actor_model.trainable_variables)
-        for i, grad in enumerate(actor_grad):
-            print(f"Actor grad {i}: {None if grad is None else tf.reduce_sum(tf.abs(grad)).numpy()}")
         actor_optimizer.apply_gradients(
             zip(actor_grad, actor_model.trainable_variables)
         )
 
-    # We compute the loss and update parameters
     def learn(self):
         record_range = min(max(seq_len+1, self.buffer_counter), self.buffer_capacity)
         batch_indices = np.random.choice(record_range - seq_len, self.batch_size)
@@ -275,61 +261,56 @@ def update_target(target, original, tau):
 
     target.set_weights(target_weights)
 
-# Return weigths
 def training_function():
-    # Instantiate every class that is necessary
+    # Instantiate every class and define every variable that is necessary
     num_episodes = 10000
-    buffer = Buffer(num_episodes, batch_size)
-    bot = Bot()
+    buffer = Buffer(num_episodes, batch_size) 
     environment = Environment()
     counter = 0
     prev_state = np.zeros((seq_len, num_states))
 
-    while bot.energy > 0:
-        # Initialization
-        state = np.zeros((num_states))
-        index = counter % seq_len
-        prev_state[index, :64] = 1 - bot.camera.depths
-        prev_state[index, 64:] = bot.hit, bot.energy, 1.0
-        prev_energy = bot.energy
-        tf_prev_state = keras.ops.expand_dims(keras.ops.convert_to_tensor(prev_state),0)
+    for ep in range(num_episodes):
+        bot = Bot()
 
-        # Choose action and interact
-        action = policy(tf_prev_state, ou_noise)
-        print(f"Raw Action: {action}")
-        action = np.mean(action[0])
-        print(f"Action : {action}")
-        energy, hit, depth_prev, values = bot.forward(dtheta=action, environment=environment)            
-        reward = energy - prev_energy
-        depth = 1 - depth_prev
-        state[:64] = depth
-        state[64:] = hit, energy, 1.0
-        print(f"Reward: {reward}")
+        while bot.energy > 0:
+            # Initialization
+            state = np.zeros((num_states))
+            index = counter % seq_len
+            prev_state[index, :64] = 1 - bot.camera.depths
+            prev_state[index, 64:] = bot.hit, bot.energy, 1.0
+            prev_energy = bot.energy
+            tf_prev_state = keras.ops.expand_dims(keras.ops.convert_to_tensor(prev_state),0)
 
-        # Update Experience Replay Buffer
-        buffer.record((prev_state, action, reward, state))
-        buffer.learn()
+            # Choose action and interact
+            action = policy(tf_prev_state, ou_noise)
+            action = np.mean(action[0])
+            energy, hit, depth_prev, values = bot.forward(dtheta=action, environment=environment)            
+            reward = energy - prev_energy
+            depth = 1 - depth_prev
+            state[:64] = depth
+            state[64:] = hit, energy, 1.0
 
-        # Update Actor and Critic network
-        update_target(target_actor, actor_model, tau)
-        update_target(target_critic, critic_model, tau)
+            # Update Experience Replay Buffer
+            buffer.record((prev_state, action, reward, state))
+            buffer.learn()
 
-        counter += 1
+            # Update target networks
+            update_target(target_actor, actor_model, tau)
+            update_target(target_critic, critic_model, tau)
 
-        # Return the weights
-        Wout = actor_model.get_layer("dense").get_weights()[0]
-        #print(f"Wout: {Wout}")
-        Win = actor_model.get_layer("rnn").get_weights()[0]
-        #print(f"Win: {Win}")
-        W = actor_model.get_layer("rnn").get_weights()[1]
-        #print(f"W: {W}")
+            counter += 1
 
-        warmup = 0
-        leak = actor_model.get_layer("rnn").cell.leak
-        f = actor_model.get_layer("rnn").cell.activation
-        g = actor_model.get_layer("dense").activation
-        model = Win.T, W.T, Wout.T, warmup, leak, f, g
-        yield model
+            # Return the weights
+            Wout = actor_model.get_layer("dense").get_weights()[0]
+            Win = actor_model.get_layer("rnn").get_weights()[0]
+            W = actor_model.get_layer("rnn").get_weights()[1]
+
+            warmup = 0
+            leak = actor_model.get_layer("rnn").cell.leak
+            f = actor_model.get_layer("rnn").cell.activation
+            g = actor_model.get_layer("dense").activation
+            model = Win.T, W.T, Wout.T, warmup, leak, f, g
+            yield model
 
 #----------------------------------------------------------------------
 if __name__ == "__main__":
@@ -341,26 +322,6 @@ if __name__ == "__main__":
     print(f"Starting training for 100 seconds (user time)")
     model = train(training_function, timeout=100)
 
-    print(f"Win {model[0]}\n")
-    print(f"W {model[1]}\n")
-    print(f"Wout {model[2].shape}\n")
-    print(f"warmup {model[3]}\n")
-    print(f"leak {model[4]}\n")
-    print(f"f {model[5]}\n")
-    print(f"g {model[6]}\n")
-
-    n = 64
-    I, X = np.zeros((n+3,1)), np.zeros((1000,1))
-    
-    bot = Bot()
-    energy = bot.energy
-
-    # The higher, the closer
-    I[:n,0] = 1 - bot.camera.depths
-    
-    I[n:,0] = bot.hit, bot.energy, 1.0
-    X = (1-model[4])*X + model[4]*model[5](np.dot(model[0], I) + np.dot(model[1], X))
-    #print(np.dot(model[2], model[6](X)))
 
     # Evaluation
     start_time = time.time()
