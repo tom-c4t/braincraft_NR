@@ -44,6 +44,9 @@ buff = ReplayBuffer(BUFFER_SIZE)
 
 def ddpg_player():
     env = Environment()
+    r_t = 0.0
+    sum_actions = 0.0
+    steer = False
     for i in range(MAX_EPISODES):
         bot = Bot()
         s_t = np.zeros((state_dim,))
@@ -67,7 +70,7 @@ def ddpg_player():
             # Execute action a_t and observe reward r_t and new state s_{t+1}
             energy, hit, distances, color = bot.forward(a_t[0], env, debug=False)
 
-            r_t = get_reward(hit, distances, energy)
+            r_t, counter, sum_actions = _get_reward(r_t, distances, hit, a_t[0][0], counter, sum_actions)
             s_t_1[0:n] = distances
             s_t_1[n:n+3] = hit, energy, 1.0
 
@@ -131,10 +134,44 @@ def ddpg_player():
         print("TOTAL REWARD @ " + str(counter) +"-th Episode:")
         print("")
 
-def get_reward(hit, distances, energy):
-    reward = min(distances) * 100
-    print(reward)
-    return reward
+def _get_reward(reward, distances, hit, action, counter, sum_actions):
+
+
+    if hit is False:
+        print("No hit!")
+        sum_actions = 0.0
+        counter = 0
+        reward = 5.0
+        if distances[31] > 0.4:
+            if abs(action) > 0.5:
+                reward = -5.0
+            if abs(action) < 0.5:
+                reward += 6.0
+        if distances[31] < 0.4:
+            if abs(action) > 1.0:
+                reward += 1.0
+            if abs(action) < 1.0:
+                reward = -1.0
+        if distances[31] < 0.2:
+            if abs(action) > 2.0:
+                reward = 10.0
+            else:
+                reward = -5.0
+
+    else:
+        print( "Hit!" )
+        counter += 1
+        if counter == 1:
+            reward = -20.0
+        else:
+            reward -= 5.0
+        sum_actions += np.sign(action)
+        if abs(action) > 3.5:
+            reward += (abs(sum_actions) * abs(action) * 0.01)
+
+    print(f"Reward: {reward}")
+
+    return reward, counter, sum_actions
 
                 
     
