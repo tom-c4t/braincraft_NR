@@ -9,11 +9,9 @@ class CriticNet(object):
   - The net also has an input dimension of (N, A), where A is the cardinality of
   the action space.
   
-  - There are one hidden layer, with dimension of hidden_size.
+  - There is one hidden layer, with dimension of hidden_size.
   
   - The state input connect to the first layer.
-  
-  - The outputs (from action and state) at the second hidden layer are summed up.
   
   - The network uses tanh for the first layer and uses tanh activation
     for the final layer. 
@@ -26,13 +24,11 @@ class CriticNet(object):
     variable self.params, which is a dictionary with the folloW1g keys:
 
     W1: Input layer weights; has shape (input_size, hidden_size)
-    W: Hidden layer weights; has shape (hidden_size, hidden_size)
     W2: Output layer weights, has shape (hidden_size, output_size)
     
     We also have the weights for a target network (same architecture but 
     different weights)
     W1_tgt: Input layer weights; has shape (input_size, hidden_size)
-    W_tgt: Hidden layer weights; has shape (hidden_size, hidden_size)
     W2_tgt: Output layer weights, has shape (hidden_size, output_size)
 
 
@@ -66,7 +62,7 @@ class CriticNet(object):
     - I: Input for state
     - action: Input for action
     _ Y_tgt: Target vaule for Q-value, used for update weights (via regression)
-    - batch_size
+    - rewards: reward for the (state, action) pair
     
    Returns:
     - Q values from critic
@@ -76,13 +72,10 @@ class CriticNet(object):
     critic_Qs = self.predict(I, action)
 
     td_error = (Y_tgt - critic_Qs)
-    #print(f"TD error: {td_error}")
     loss = np.mean(td_error**2, axis=0)
-    #print(f"Critic loss: {loss}")
-
     x = np.concatenate([I, action], axis=1)
 
-    #print(f"X shape: {self.X.shape} TD error shape: {td_error.shape}")
+    # Compute the gradients
     dQ_dW2 = self.X.T @ td_error 
     delta_hidden = td_error @ self.W2.T * self.diff_relu(self.X)
     dQ_dW1 = x.T @ delta_hidden
@@ -99,11 +92,10 @@ class CriticNet(object):
     Inputs:
     - I: Input for state, shape (N, S), N is the batch size
     - action: Input for action, shape (N, A), N is the batch size
-    
     - use_target: use default weights if False; otherwise use target weights.
     
    Returns:
-    - grads_action: gradient of the Q value for a action with the weights from the critic
+    - dQda: gradient of the Q value for a action with the weights from the critic
     """
     # Unpack variables from the params dictionary
     if not use_target:
@@ -131,6 +123,9 @@ class CriticNet(object):
     Train this neural network using adam optimizer.
     Inputs:
     - I: A numpy array of shape (N, D) giving training data.
+    - action: A numpy array of shape (N, A) giving training actions.
+    - reward: A numpy array of shape (N,) giving the reward for the (state, action) pair
+    - Y_tgt: A numpy array of shape (N,) giving the target Q value
     """
     # Compute forward pass and gradients using the current minibatch
     critic_Qs, grads_critic = self.evaluate_gradient(I, action, reward, Y_tgt)
